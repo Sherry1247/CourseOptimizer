@@ -234,6 +234,27 @@ public class Semester {
         }
         return ids;
     }
+    
+    public String toJson() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        sb.append("\"label\":\"").append(getSemesterLabel()).append("\",");
+
+        sb.append("\"courses\":[");
+        for (Course c : courses) {
+            sb.append("{")
+                    .append("\"id\":\"").append(c.getCourseId()).append("\",")
+                    .append("\"name\":\"").append(c.getName()).append("\",")
+                    .append("\"credits\":").append(c.getCredits())
+                    .append("},");
+        }
+        if (!courses.isEmpty()) sb.deleteCharAt(sb.length()-1);
+        sb.append("]");
+
+        sb.append("}");
+        return sb.toString();
+    }
+
 
     /**
      * toString method for easy debugging

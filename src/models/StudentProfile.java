@@ -1,7 +1,9 @@
 package models;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Student Profile class - Stores student preferences and goals
@@ -29,6 +31,9 @@ public class StudentProfile {
 
     // ========== Career Goals ==========
     private String careerGoal; // "grad_school" or "industry"
+    
+    private boolean doubleMajorFlag;
+    private Set<String> completedCourses;
 
     // ========== Constructors ==========
 
@@ -43,6 +48,8 @@ public class StudentProfile {
         this.balanceDifficulty = true; // Enable difficulty balancing by default
         this.careerGoal = "industry";
         this.secondMajor = null; // No double major by default
+        this.doubleMajorFlag = false;
+        this.completedCourses = new HashSet<>();
     }
 
     /**
@@ -58,6 +65,8 @@ public class StudentProfile {
         this.balanceDifficulty = true;
         this.careerGoal = careerGoal;
         this.secondMajor = null;
+        this.doubleMajorFlag = false;
+        this.completedCourses = new HashSet<>();
     }
 
     // ========== Getters and Setters ==========
@@ -124,6 +133,25 @@ public class StudentProfile {
 
     public void setCareerGoal(String careerGoal) {
         this.careerGoal = careerGoal;
+    }
+    
+ // ===== Double Major Flag =====
+    public void setDoubleMajor(boolean flag) {
+        this.doubleMajorFlag = flag;
+    }
+
+    public boolean isDoubleMajorFlag() {
+        return this.doubleMajorFlag;
+    }
+
+    // ===== Completed Courses =====
+    public void setCompletedCourses(Set<String> completed) {
+        if (completed == null) completed = new HashSet<>();
+        this.completedCourses = completed;
+    }
+
+    public Set<String> getCompletedCourses() {
+        return this.completedCourses;
     }
 
     // ========== Utility Methods ==========

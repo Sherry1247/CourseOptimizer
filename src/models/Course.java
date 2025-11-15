@@ -4,57 +4,42 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Course class - Stores all information about a course
- * 
- * Includes: - Basic info (course ID, name, credits) - Prerequisites - Grade
- * statistics (average GPA, A-rate) - Professor information - Course attributes
- * (early morning, relevance, majors)
+ * 课程类 - 存储一门课的所有信息
  */
 public class Course {
-    // ========== Basic Information ==========
-    private String courseId; // Course ID, e.g., "CS 400"
-    private String name; // Course name, e.g., "Programming III"
-    private int credits; // Credits, e.g., 3
+    // ========== 基本信息 ==========
+    private String courseId;
+    private String name;
+    private int credits;
 
-    // ========== Prerequisites ==========
-    private List<String> prerequisites; // List of prerequisite courses, e.g., ["CS 300", "CS 220"]
+    // ========== 先修课程 ==========
+    private List<String> prerequisites;
 
-    // ========== Grade Statistics ==========
-    private double averageGPA; // Historical average GPA, e.g., 3.2
-    private double aRate; // A-rate (proportion getting A), e.g., 0.75 (75%)
+    // ========== 成绩相关 ==========
+    private double averageGPA;
+    private double aRate;
 
-    // ========== Professor Information ==========
-    private String professor; // Professor name, e.g., "Prof. Smith"
-    private double profRating; // Rate My Professor rating, 1.0-5.0
+    // ========== 教授信息 ==========
+    private String professor;
+    private double profRating;
 
-    // ========== Course Attributes ==========
-    private boolean isEarlyMorning; // Is it an 8am class, true/false
-    private String relevance; // Relevance: "grad_school" or "industry" or "both"
+    // ========== 课程属性 ==========
+    private boolean isEarlyMorning;
+    private String relevance;
 
-    // ========== Major Attribution (for double major support) ==========
-    private List<String> belongsToMajors; // Which majors this course belongs to, e.g., ["CS",
-                                          // "MATH"]
+    // ========== 🆕 专业信息（支持双专业）==========
+    private List<String> majors; // 这门课属于哪些专业
 
-    // ========== Constructors ==========
+    // ========== 构造函数 ==========
 
-    /**
-     * Basic constructor (required information only)
-     * 
-     * @param courseId Course ID
-     * @param name     Course name
-     * @param credits  Number of credits
-     */
     public Course(String courseId, String name, int credits) {
         this.courseId = courseId;
         this.name = name;
         this.credits = credits;
         this.prerequisites = new ArrayList<>();
-        this.belongsToMajors = new ArrayList<>();
+        this.majors = new ArrayList<>(); // 🆕 初始化专业列表
     }
 
-    /**
-     * Full constructor
-     */
     public Course(String courseId, String name, int credits, List<String> prerequisites,
             double averageGPA, double aRate, String professor, double profRating,
             boolean isEarlyMorning, String relevance) {
@@ -68,7 +53,7 @@ public class Course {
         this.profRating = profRating;
         this.isEarlyMorning = isEarlyMorning;
         this.relevance = relevance;
-        this.belongsToMajors = new ArrayList<>();
+        this.majors = new ArrayList<>(); // 🆕 初始化专业列表
     }
 
     // ========== Getters and Setters ==========
@@ -153,30 +138,59 @@ public class Course {
         this.relevance = relevance;
     }
 
-    public List<String> getBelongsToMajors() {
-        return belongsToMajors;
+    // ========== 🆕 专业相关方法 ==========
+
+    public List<String> getMajors() {
+        return majors;
     }
 
-    public void setBelongsToMajors(List<String> belongsToMajors) {
-        this.belongsToMajors = belongsToMajors;
+    public void setMajors(List<String> majors) {
+        this.majors = majors;
     }
-
-    // ========== Utility Methods ==========
 
     /**
-     * Check if course has prerequisites
-     * 
-     * @return true if has prerequisites, false otherwise
+     * 添加一个专业
      */
+    public void addMajor(String major) {
+        if (majors == null) {
+            majors = new ArrayList<>();
+        }
+        if (!majors.contains(major)) {
+            majors.add(major);
+        }
+    }
+
+    /**
+     * 检查这门课是否属于某个专业
+     */
+    public boolean belongsToMajor(String major) {
+        return majors != null && majors.contains(major);
+    }
+
+    /**
+     * 检查这门课是否是重叠课程（属于多个专业）
+     */
+    public boolean isOverlapCourse(List<String> studentMajors) {
+        if (majors == null || majors.isEmpty() || studentMajors == null) {
+            return false;
+        }
+
+        int count = 0;
+        for (String major : studentMajors) {
+            if (majors.contains(major)) {
+                count++;
+            }
+        }
+
+        return count >= 2; // 属于学生的2个或以上专业
+    }
+
+    // ========== 工具方法 ==========
+
     public boolean hasPrerequisites() {
         return prerequisites != null && !prerequisites.isEmpty();
     }
 
-    /**
-     * Add a prerequisite course
-     * 
-     * @param courseId Prerequisite course ID
-     */
     public void addPrerequisite(String courseId) {
         if (prerequisites == null) {
             prerequisites = new ArrayList<>();
@@ -184,78 +198,9 @@ public class Course {
         prerequisites.add(courseId);
     }
 
-    /**
-     * Add a major that this course belongs to
-     * 
-     * @param major Major name (e.g., "CS", "MATH")
-     */
-    public void addMajor(String major) {
-        if (belongsToMajors == null) {
-            belongsToMajors = new ArrayList<>();
-        }
-        if (!belongsToMajors.contains(major)) {
-            belongsToMajors.add(major);
-        }
-    }
-
-    /**
-     * Check if course belongs to a specific major
-     * 
-     * @param major Major name
-     * @return true if belongs to this major, false otherwise
-     */
-    public boolean belongsToMajor(String major) {
-        return belongsToMajors != null && belongsToMajors.contains(major);
-    }
-
-    /**
-     * Check if course is an overlap course (belongs to multiple majors) Useful for
-     * double major students
-     * 
-     * @param majors List of majors to check
-     * @return true if belongs to 2 or more of the given majors
-     */
-    public boolean isOverlapCourse(List<String> majors) {
-        if (belongsToMajors == null || belongsToMajors.isEmpty()) {
-            return false;
-        }
-
-        int matchCount = 0;
-        for (String major : majors) {
-            if (belongsToMajors.contains(major)) {
-                matchCount++;
-            }
-        }
-
-        return matchCount >= 2; // Belongs to at least 2 majors
-    }
-
-    /**
-     * toString method for easy debugging
-     */
     @Override
     public String toString() {
         return String.format("%s: %s (%d credits, GPA: %.2f, A-rate: %.0f%%, Prof: %s)", courseId,
                 name, credits, averageGPA, aRate * 100, professor);
-    }
-
-    /**
-     * Detailed string representation
-     */
-    public String toDetailedString() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("Course: ").append(courseId).append(" - ").append(name).append("\n");
-        sb.append("  Credits: ").append(credits).append("\n");
-        sb.append("  Prerequisites: ").append(prerequisites.isEmpty() ? "None" : prerequisites)
-                .append("\n");
-        sb.append("  Average GPA: ").append(String.format("%.2f", averageGPA)).append("\n");
-        sb.append("  A-Rate: ").append(String.format("%.0f%%", aRate * 100)).append("\n");
-        sb.append("  Professor: ").append(professor).append(" (Rating: ").append(profRating)
-                .append(")").append("\n");
-        sb.append("  Early Morning: ").append(isEarlyMorning ? "Yes" : "No").append("\n");
-        sb.append("  Relevance: ").append(relevance != null ? relevance : "N/A").append("\n");
-        sb.append("  Belongs to majors: ")
-                .append(belongsToMajors.isEmpty() ? "N/A" : belongsToMajors);
-        return sb.toString();
     }
 }

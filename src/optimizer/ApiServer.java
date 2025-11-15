@@ -38,11 +38,29 @@ public class ApiServer {
 
             // Read JSON body from frontend
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            System.out.println("Received JSON Body:");
+            System.out.println(body);
 
-            // Convert JSON → Java objects (你可以用 minimal JSON parser 或 org.json)
-            Map<String, Object> json = Json.parse(body);
+            // Convert JSON → Java objects
+            Map<String, Object> json = null;
+            try {
+                json = Json.parse(body);
+            } catch (Exception e) {
+                e.printStackTrace();
+                sendResponse(exchange, 400, "JSON parse error: " + e.getMessage());
+                return;
+            }
 
-            StudentProfile profile = Json.toStudentProfile(json);
+
+            StudentProfile profile = null;
+            try {
+                profile = Json.toStudentProfile(json);
+            } catch (Exception e) {
+                e.printStackTrace();
+                sendResponse(exchange, 400, "Profile parse error: " + e.getMessage());
+                return;
+            }
+
             List<Course> allCourses = CourseRepository.loadAllCourses();
 
             ScheduleOptimizer optimizer = new ScheduleOptimizer();

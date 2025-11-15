@@ -954,31 +954,91 @@
         }
 
         // Generate schedule
-        function generateSchedule() {
-            // Collect form data
-            const formData = {
-                majorType: document.getElementById('majorType').value,
-                major1: document.getElementById('major1').value,
-                major2: document.getElementById('major2').value,
-                years: document.getElementById('years').value,
-                startSemester: document.getElementById('startSemester').value,
-                currentCredits: document.getElementById('currentCredits').value,
-                targetGPA: document.getElementById('targetGPA').value,
-                maxCredits: document.getElementById('maxCredits').value,
-                difficulty: document.getElementById('difficulty').value,
-                completedCourses: getCompletedCourses()
-            };
+        async function generateSchedule() {
+    // Collect form data from the HTML form
+    const formData = {
+        majorType: document.getElementById('majorType').value,
+        major1: document.getElementById('major1').value,
+        major2: document.getElementById('major2').value,
+        targetGPA: parseFloat(document.getElementById('targetGPA').value),
+        maxCredits: parseInt(document.getElementById('maxCredits').value),
+        avoid8am: document.getElementById('avoid8am').checked,
+        prioritizeGPA: document.getElementById('prioritizeRating').checked,
+        balanceDifficulty: document.getElementById('difficulty').value === 'balanced',
+        careerGoal: "industry",
+        completedCourses: getCompletedCourses()
+    };
 
-            // Show loading
-            document.getElementById('demoForm').style.display = 'none';
-            document.getElementById('loadingState').classList.add('show');
+    // Show loading screen
+    document.getElementById('demoForm').style.display = 'none';
+    document.getElementById('loadingState').classList.add('show');
 
-            // Simulate API call
-            setTimeout(() => {
-                document.getElementById('loadingState').classList.remove('show');
-                displayResults(formData);
-            }, 2000);
-        }
+    try {
+        // === REAL API CALL ===
+        const response = await fetch("http://localhost:8080/generate-plan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(formData)
+        });
+
+        const plan = await response.json();   // Get JSON from backend
+
+        // Hide loading
+        document.getElementById('loadingState').classList.remove('show');
+
+        // Display backend results
+        showBackendPlan(plan);
+
+    } catch (err) {
+        console.error("Error calling backend:", err);
+        alert("Backend error: " + err);
+    }
+}
+
+        function showBackendPlan(plan) {
+    const grid = document.getElementById("scheduleGrid");
+    grid.innerHTML = "";
+
+    plan.forEach(semester => {
+        const card = document.createElement('div');
+        card.className = 'semester-card';
+
+        const header = document.createElement('div');
+        header.className = 'semester-header';
+        header.textContent = semester.label;
+        card.appendChild(header);
+
+        const list = document.createElement('div');
+        list.className = 'course-list';
+
+        let totalCredits = 0;
+
+        semester.courses.forEach(c => {
+            const item = document.createElement('div');
+            item.className = 'course-item';
+            item.innerHTML = `
+                <div class="course-code">${c.id}</div>
+                <div class="course-name">${c.name}</div>
+                <div class="course-meta">${c.credits} credits</div>
+            `;
+            list.appendChild(item);
+            totalCredits += c.credits;
+        });
+
+        card.appendChild(list);
+
+        const total = document.createElement('div');
+        total.className = "semester-total";
+        total.textContent = `Total: ${totalCredits} credits`;
+        card.appendChild(total);
+
+        grid.appendChild(card);
+    });
+
+    document.getElementById("resultsContainer").classList.add("show");
+}
+
+
 
         function getCompletedCourses() {
             const courses = [];

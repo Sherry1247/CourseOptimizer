@@ -36,7 +36,7 @@ public class ApiServer {
             exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
             exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
 
-            // OPTIONS preflight request  —— browsers send this automatically
+            // OPTIONS preflight request —— browsers send this automatically
             if (exchange.getRequestMethod().equalsIgnoreCase("OPTIONS")) {
                 exchange.sendResponseHeaders(204, -1); // No content
                 return;
@@ -48,7 +48,8 @@ public class ApiServer {
             }
 
             // Read JSON body from frontend
-            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            String body = new String(exchange.getRequestBody().readAllBytes(),
+                    StandardCharsets.UTF_8);
             System.out.println("Received JSON Body:");
             System.out.println(body);
 
@@ -82,7 +83,8 @@ public class ApiServer {
     }
 
     // JSON response with CORS header
-    private static void sendJsonResponse(HttpExchange exchange, int status, String json) throws IOException {
+    private static void sendJsonResponse(HttpExchange exchange, int status, String json)
+            throws IOException {
         byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json");
         exchange.sendResponseHeaders(status, bytes.length);
@@ -91,7 +93,8 @@ public class ApiServer {
         os.close();
     }
 
-    private static void sendResponse(HttpExchange exchange, int status, String text) throws IOException {
+    private static void sendResponse(HttpExchange exchange, int status, String text)
+            throws IOException {
         byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
         exchange.sendResponseHeaders(status, bytes.length);
         OutputStream os = exchange.getResponseBody();

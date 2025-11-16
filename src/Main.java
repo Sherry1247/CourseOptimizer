@@ -8,7 +8,6 @@ import java.util.*;
  * This creates sample data and demonstrates the optimizer's functionality
  */
 public class Main {
-    
 
     public static void main(String[] args) {
         System.out.println("Course Planner - Algorithm Test");

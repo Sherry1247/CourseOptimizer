@@ -1,9 +1,9 @@
 package optimizer;
 
-import models.*;
 import graph.PrerequisiteGraph;
-import scorer.CourseScorer;
 import java.util.*;
+import models.*;
+import scorer.CourseScorer;
 
 /**
  * Schedule Optimizer - Core algorithm for generating 4-year course plans
@@ -36,93 +36,50 @@ public class ScheduleOptimizer {
      */
     public List<Semester> generatePlan(StudentProfile profile, List<Course> allCourses) {
 
-        System.out.println("\n========================================");
-        System.out.println("   GENERATING PLAN FOR: " + profile.getMajor());
-        System.out.println("========================================");
-
-        // ------------------------------------------------------------
-        // 0. Exclude completed courses from allCourses AND from required list
-        // ------------------------------------------------------------
-        Set<String> completed = new HashSet<>(profile.getCompletedCourses());
-
-        System.out.println("\nCompleted courses reported by UI: " + completed);
-
-        // Remove completed from course list
-        List<Course> filteredCourses = new ArrayList<>();
-        for (Course c : allCourses) {
-            if (!completed.contains(c.id)) {
-                filteredCourses.add(c);
-            } else {
-                System.out.println(" - Excluding already completed course: " + c.id);
-            }
-        }
-        allCourses = filteredCourses;
-
-        // ------------------------------------------------------------
-        // 1. Build prerequisite graph (keep your original logic)
-        // ------------------------------------------------------------
+        // 1. Build prerequisite graph
         prereqGraph.addCourses(allCourses);
 
+        // Check for circular dependencies
         if (prereqGraph.hasCycle()) {
-            System.err.println("⚠️ Warning: Prerequisite graph has circular dependencies!");
+            System.err.println("️ Warning: Prerequisite graph has circular dependencies!");
         }
 
-        // ------------------------------------------------------------
-        // 2. Determine required courses based on major(s)
-        // ------------------------------------------------------------
+        // 2. Get required courses based on major(s)
         List<String> requiredCourses;
 
         if (profile.hasDoubleMajor()) {
+            // Double major: merge requirements from both majors
             System.out.println("\n Planning for double major: " + profile.getMajor() + " + "
                     + profile.getSecondMajor());
 
             requiredCourses = DoubleMajorHelper.mergeRequirements(profile.getMajor(),
                     profile.getSecondMajor(), allCourses);
 
+            // Check feasibility
             boolean feasible = DoubleMajorHelper.isFeasible(requiredCourses, allCourses,
                     profile.getMaxCreditsPerSem());
 
             if (!feasible) {
-                System.err.println("⚠️ Warning: Double major may not be feasible in 4 years!");
+                System.err.println(" Warning: Double major may not be feasible in 4 years!");
             }
         } else {
+            // Single major
             System.out.println("\n Planning for major: " + profile.getMajor());
             requiredCourses = DoubleMajorHelper.getRequiredCourses(profile.getMajor());
         }
 
-        System.out.println("Total required before removing completed: " + requiredCourses.size());
+        System.out.println("Total courses required: " + requiredCourses.size());
 
-        // ------------------------------------------------------------
-        // 2.5. Remove completed from required list
-        // ------------------------------------------------------------
-        List<String> filteredRequired = new ArrayList<>();
-        for (String req : requiredCourses) {
-            if (!completed.contains(req)) {
-                filteredRequired.add(req);
-            } else {
-                System.out.println(" - Already completed: " + req + " (removed from required)");
-            }
-        }
-        requiredCourses = filteredRequired;
-
-        System.out.println("Total required AFTER removing completed: " + requiredCourses.size());
-
-        // ------------------------------------------------------------
-        // 3. Generate plan using your original internal method
-        // ------------------------------------------------------------
+        // 3. Generate the plan
         List<Semester> plan = generatePlanInternal(profile, allCourses, requiredCourses);
 
-        // ------------------------------------------------------------
-        // 4. Optional difficulty balancing
-        // ------------------------------------------------------------
+        // 4. Balance difficulty if enabled
         if (profile.isBalanceDifficulty()) {
             System.out.println("\n⚖️ Balancing difficulty across semesters...");
             DifficultyBalancer.balancePlan(plan);
         }
 
-        // ------------------------------------------------------------
-        // 5. Print difficulty analysis
-        // ------------------------------------------------------------
+        // 5. Analyze difficulty
         DifficultyBalancer.analyzeDifficulty(plan);
 
         return plan;

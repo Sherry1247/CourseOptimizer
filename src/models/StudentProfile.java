@@ -31,7 +31,7 @@ public class StudentProfile {
 
     // ========== Career Goals ==========
     private String careerGoal; // "grad_school" or "industry"
-    
+
     private boolean doubleMajorFlag;
     private Set<String> completedCourses;
 
@@ -134,8 +134,8 @@ public class StudentProfile {
     public void setCareerGoal(String careerGoal) {
         this.careerGoal = careerGoal;
     }
-    
- // ===== Double Major Flag =====
+
+    // ===== Double Major Flag =====
     public void setDoubleMajor(boolean flag) {
         this.doubleMajorFlag = flag;
     }
@@ -146,7 +146,8 @@ public class StudentProfile {
 
     // ===== Completed Courses =====
     public void setCompletedCourses(Set<String> completed) {
-        if (completed == null) completed = new HashSet<>();
+        if (completed == null)
+            completed = new HashSet<>();
         this.completedCourses = completed;
     }
 

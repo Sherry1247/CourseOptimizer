@@ -54,7 +54,6 @@ public class DoubleMajorHelper {
         // Map of major -> required courses
         Map<String, List<String>> majorRequirements = new HashMap<>();
 
-
         // Computer Science major requirements
         majorRequirements.put("CS", Arrays.asList("CS 200", "CS 300", "CS 400", "CS 500", "CS 354",
                 "CS 577", "CS 540", "MATH 221", "MATH 222", "MATH 340" // Math courses that CS

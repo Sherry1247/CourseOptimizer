@@ -625,7 +625,6 @@
                         <div class="step" id="indicator3">3</div>
                         <div class="step" id="indicator4">4</div>
                         <div class="step" id="indicator5">5</div>
-                        <div class="step" id="indicator6">6</div>
                     </div>
 
                     <!-- Step 1: Major Selection -->
@@ -726,49 +725,10 @@
                         </div>
                     </div>
 
-                    <!-- Step 4: Completed Courses -->
-                    <div class="form-step" id="step4">
-                        <h3 style="margin-bottom: 20px; color: #c5050c;">✅ Step 4: What courses have you taken?</h3>
-                        
-                        <p style="margin-bottom: 20px; color: #666;">
-                            Select all prerequisite courses you've already completed:
-                        </p>
-
-                        <div class="checkbox-group">
-                            <div class="checkbox-item">
-                                <input type="checkbox" id="cs200" value="CS 200">
-                                <label for="cs200">CS 200 - Programming I</label>
-                            </div>
-                            <div class="checkbox-item">
-                                <input type="checkbox" id="cs300" value="CS 300">
-                                <label for="cs300">CS 300 - Programming II</label>
-                            </div>
-                            <div class="checkbox-item">
-                                <input type="checkbox" id="math221" value="MATH 221">
-                                <label for="math221">MATH 221 - Calculus I</label>
-                            </div>
-                            <div class="checkbox-item">
-                                <input type="checkbox" id="math222" value="MATH 222">
-                                <label for="math222">MATH 222 - Calculus II</label>
-                            </div>
-                            <div class="checkbox-item">
-                                <input type="checkbox" id="econ101" value="ECON 101">
-                                <label for="econ101">ECON 101 - Microeconomics</label>
-                            </div>
-                            <div class="checkbox-item">
-                                <input type="checkbox" id="econ102" value="ECON 102">
-                                <label for="econ102">ECON 102 - Macroeconomics</label>
-                            </div>
-                        </div>
-
-                        <div class="button-group">
-                            <button class="btn btn-prev" onclick="prevStep()">← Back</button>
-                            <button class="btn btn-next" onclick="nextStep()">Next →</button>
-                        </div>
-                    </div>
+                   
 
                     <!-- Step 5: Goals & Preferences -->
-                    <div class="form-step" id="step5">
+                    <div class="form-step" id="step4">
                         <h3 style="margin-bottom: 20px; color: #c5050c;">🎯 Step 5: What are your goals?</h3>
                         
                         <div class="form-group">
@@ -801,7 +761,7 @@
                     </div>
 
                     <!-- Step 6: Additional Preferences -->
-                    <div class="form-step" id="step6">
+                    <div class="form-step" id="step5">
                         <h3 style="margin-bottom: 20px; color: #c5050c;">⚙️ Step 6: Any preferences?</h3>
                         
                         <div class="checkbox-group">
@@ -899,7 +859,7 @@
 
     <script>
         let currentStep = 1;
-        const totalSteps = 6;
+        const totalSteps = 5;
 
         // Mobile menu toggle
         function toggleMenu() {
@@ -975,7 +935,7 @@ async function generateSchedule() {
         prioritizeGPA: document.getElementById('prioritizeRating').checked,
         balanceDifficulty: document.getElementById('difficulty').value === 'balanced',
         careerGoal: "industry",
-        completedCourses: getCompletedCourses()
+        completedCourses: []
     };
 
     document.getElementById('demoForm').style.display = 'none';
@@ -1042,15 +1002,6 @@ async function generateSchedule() {
 
     document.getElementById("resultsContainer").classList.add("show");
 }
-
-
-
-        function getCompletedCourses() {
-            const courses = [];
-            const checkboxes = document.querySelectorAll('#step4 input[type="checkbox"]:checked');
-            checkboxes.forEach(cb => courses.push(cb.value));
-            return courses;
-        }
 
         
 

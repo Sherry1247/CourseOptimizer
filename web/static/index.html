@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BadgerPlan · UW–Madison Degree Planner</title>
+  <meta name="description" content="A personalized, prerequisite-aware degree planning workspace for UW–Madison students.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="BadgerPlan home">
+      <span class="crest">W</span>
+      <span><strong>BadgerPlan</strong><small>UW–Madison degree planner</small></span>
+    </a>
+    <nav>
+      <a href="#planner">Planner</a>
+      <a href="#requirements">Requirements</a>
+      <a href="#sources">Data sources</a>
+    </nav>
+    <div class="top-actions">
+      <span id="saveStatus" class="save-status">Not saved</span>
+      <button id="savePlan" class="button ghost">Save plan</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="eyebrow"><span></span> Built for Badgers</div>
+      <h1>Your degree, mapped<br><em>with every prerequisite in view.</em></h1>
+      <p>Build a flexible UW–Madison plan around two majors, transfer credit, and your graduation target. Then drag any course to make the plan yours.</p>
+      <div class="source-strip">
+        <span>Academic rules</span><strong>UW Guide</strong>
+        <span>Degree check</span><strong>DARS</strong>
+        <span>Grade context</span><strong>Madgrades</strong>
+      </div>
+    </section>
+
+    <section id="planner" class="workspace">
+      <aside class="setup-panel">
+        <div class="panel-heading">
+          <span class="step-number">01</span>
+          <div><h2>Tell us where you are</h2><p>Your plan starts from your real academic position.</p></div>
+        </div>
+
+        <div class="field">
+          <label>I am entering as</label>
+          <div class="segmented" role="group" aria-label="Student type">
+            <button class="segment active" data-student-type="first-year">First-year</button>
+            <button class="segment" data-student-type="transfer">Transfer</button>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field"><label for="startTerm">Starting term</label><select id="startTerm"><option>Fall</option><option>Spring</option></select></div>
+          <div class="field"><label for="startYear">Start year</label><select id="startYear"></select></div>
+        </div>
+
+        <div class="field">
+          <label for="graduationYear">Target graduation year</label>
+          <select id="graduationYear"></select>
+          <small id="timelineHint">A standard four-year path</small>
+        </div>
+
+        <div class="divider"></div>
+        <div class="panel-heading compact">
+          <span class="step-number">02</span>
+          <div><h2>Choose your programs</h2><p>We find shared requirements automatically.</p></div>
+        </div>
+
+        <div class="field"><label for="primaryMajor">Primary major</label><select id="primaryMajor"></select></div>
+        <label class="toggle-row"><span><strong>Plan a double major</strong><small>Prioritize courses that count twice</small></span><input id="doubleMajor" type="checkbox"><i></i></label>
+        <div id="secondMajorField" class="field hidden"><label for="secondMajor">Second major</label><select id="secondMajor"></select></div>
+
+        <div class="divider"></div>
+        <div class="field">
+          <label for="completedSearch">Completed, AP/IB, or transfer courses</label>
+          <div class="token-input"><input id="completedSearch" placeholder="Search by course code"><div id="completedSuggestions" class="suggestions hidden"></div></div>
+          <div id="completedTokens" class="tokens"></div>
+          <small id="creditHelp">Add placement or incoming credit you already know.</small>
+        </div>
+
+        <div class="field"><label for="maxCredits">Major-course load <strong id="maxCreditsValue">15</strong> credits</label><input id="maxCredits" type="range" min="6" max="18" value="15"></div>
+        <button id="generatePlan" class="button primary full"><span>Generate my plan</span><span aria-hidden="true">→</span></button>
+      </aside>
+
+      <div class="plan-area">
+        <div class="plan-toolbar">
+          <div><span class="kicker">Personal workspace</span><h2 id="planTitle">Your four-year map</h2></div>
+          <div class="toolbar-actions">
+            <button id="openLibrary" class="button ghost">＋ Add a course</button>
+            <button id="exportPlan" class="button dark">Export JSON</button>
+          </div>
+        </div>
+
+        <div id="summary" class="summary-grid">
+          <article><small>Major courses</small><strong id="summaryCourses">—</strong><span>planned</span></article>
+          <article><small>Shared requirements</small><strong id="summaryOverlap">—</strong><span>double-major fit</span></article>
+          <article><small>Open issues</small><strong id="summaryIssues">—</strong><span>need attention</span></article>
+        </div>
+
+        <div id="alerts" class="alerts hidden"></div>
+        <div id="schedule" class="schedule-board empty-state">
+          <div class="empty-illustration"><span>1</span><i></i><span>2</span><i></i><span>3</span></div>
+          <h3>Ready when you are.</h3>
+          <p>Choose your starting point and majors, then generate a prerequisite-aware plan.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="requirements" class="requirements-section">
+      <div><span class="kicker">Transparent by design</span><h2>Every recommendation should answer “why?”</h2></div>
+      <div class="principles">
+        <article><span>01</span><h3>Official rules first</h3><p>Program rules are stored by catalog year with their UW Guide source—not inferred from ratings.</p></article>
+        <article><span>02</span><h3>Double-count visibly</h3><p>Shared requirements are labeled on the course card so you can see exactly what creates overlap.</p></article>
+        <article><span>03</span><h3>You stay in control</h3><p>Drag courses between terms. The planner flags prerequisite, offering, and credit-load conflicts immediately.</p></article>
+      </div>
+    </section>
+
+    <section id="sources" class="sources-section">
+      <div><span class="kicker light">Data architecture</span><h2>One plan. Clear provenance.</h2></div>
+      <div class="source-cards">
+        <a href="https://guide.wisc.edu/" target="_blank"><small>Authoritative</small><strong>UW–Madison Guide</strong><span>Programs, courses, requisites, catalog years ↗</span></a>
+        <a href="https://public.enroll.wisc.edu/" target="_blank"><small>Current term</small><strong>Course Search & Enroll</strong><span>Sections, times, seats, instructors ↗</span></a>
+        <a href="https://api.madgrades.com/" target="_blank"><small>Historical context</small><strong>Madgrades API</strong><span>Grade distributions with API token ↗</span></a>
+        <a href="https://registrar.wisc.edu/dars/" target="_blank"><small>Final verification</small><strong>DARS</strong><span>Your official degree audit ↗</span></a>
+      </div>
+      <p class="disclaimer">BadgerPlan is an independent planning tool and is not affiliated with UW–Madison. Always verify your final plan in DARS and with an academic advisor.</p>
+    </section>
+  </main>
+
+  <dialog id="courseLibrary" class="course-library">
+    <div class="library-header"><div><span class="kicker">Course library</span><h2>Add something to your plan</h2></div><button id="closeLibrary" aria-label="Close">×</button></div>
+    <input id="librarySearch" class="library-search" placeholder="Search COMP SCI, economics, calculus…">
+    <div id="libraryResults" class="library-results"></div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

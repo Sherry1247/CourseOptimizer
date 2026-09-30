@@ -1,196 +1,111 @@
-# CourseOptimizer 🎓
+# BadgerPlan / CourseOptimizer
 
-> A unified course optimization network connecting 200M+ university students worldwide with 25,000+ accredited universities and colleges.
+BadgerPlan 是一个面向 UW–Madison 学生的个性化 degree-planning workspace：支持新生与转学生、双专业、目标毕业年份、先修课校验，以及可拖拽的学期规划板。
 
-## 📋 Table of Contents
+> BadgerPlan 不是 UW–Madison 官方产品，也不能替代 DARS 或 academic advisor。专业要求以学生对应 catalog year 的 UW Guide 和 DARS 为准。
 
-- [About](#about)
-- [The Problem](#the-problem)
-- [Solution](#solution)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Technologies](#technologies)
-- [Getting Started](#getting-started)
-- [Usage](#usage)
-- [Contributing](#contributing)
-- [License](#license)
+## 当前产品
 
-## 🎯 About
+- 浅色 UW 深红视觉系统，响应式桌面/移动布局
+- First-year / Transfer 两种入口
+- 自定义入学学期、入学年份和目标毕业年份
+- 单专业或双专业要求合并、共享课程标记
+- 已修、AP/IB、placement 和 transfer course 输入
+- prerequisite-aware 自动排课
+- 原生 HTML5 跨学期拖拽
+- 拖动后即时检查先修顺序、开课季和学分上限
+- 8,952 门 UW 课程的本地 SQLite 检索（通过公开 UW Courses snapshot 导入）
+- 本地保存 plan、JSON 导出和课程库手动加课
+- Madgrades server-side API client 接入位
 
-CourseOptimizer is an intelligent course planning platform designed to help university students navigate the complex process of course selection and degree planning. Whether you're pursuing a single major or double major, CourseOptimizer streamlines your academic journey through data-driven recommendations and optimization algorithms.
+## 技术结构
 
-### Key Statistics
-
-- **200M+** university students worldwide
-- **25,000+** accredited universities & colleges
-- Connected through a unified course optimization network
-
-## 🚨 The Problem
-
-Students face significant challenges in course planning:
-
-- **67%** of students report difficulty planning courses
-- **42%** of double-major students take unnecessary credits
-- Average student spends **10-20 hours/semester** researching courses
-- **10%+** delay graduation due to misplanned requirements
-
-## 💡 Solution
-
-CourseOptimizer addresses these challenges through a three-layer architecture that creates a closed-loop, intelligent course planning experience.
-
-## ✨ Features
-
-### Interactive Demo
-- 6-step guided process to plan your complete 4-year course schedule
-- Intuitive interface for entering academic standing and completed credits
-- Real-time schedule generation and optimization
-
-### Data Integration
-- **Course Graph**: Complete course dependency mapping
-- **Madgrades**: Grade distribution visualization for UW-Madison courses
-- **RateMyProfessors**: Professor ratings and reviews
-- **Course Offering Frequency**: Historical data on course availability
-
-### Intelligent Optimization
-- Constraint satisfaction algorithms
-- Multi-objective optimization
-- Adaptive learning based on user preferences
-- Personalized course recommendations
-
-## 🏗️ Architecture
-
-CourseOptimizer uses three core layers to create a closed-loop experience:
-
-### 1. Top Layer (User Layer)
-- Import major requirements
-- Set personal preferences
-- Define academic goals and constraints
-
-### 2. Middle Layer (Data Layer)
-- Course graph and prerequisites
-- Madgrades grade distributions
-- RateMyProfessors ratings
-- Course offering frequency data
-
-### 3. Bottom Layer (Intelligence Layer)
-- Constraint satisfaction algorithms
-- Multi-objective optimization
-- Adaptive learning
-- Schedule generation and validation
-
-## 🛠️ Technologies
-
-- **Frontend**: [Add your frontend technologies]
-- **Backend**: [Add your backend technologies]
-- **Database**: [Add your database]
-- **APIs**: 
-  - RateMyProfessors API
-  - Madgrades API
-  - [Other APIs]
-- **Algorithms**: Constraint Satisfaction, Multi-objective Optimization
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-```bash
-# List prerequisites here
-node >= 14.0.0
-npm >= 6.0.0
+```text
+web/static/
+  index.html              # 产品页面
+  app.css                 # UW 浅色/深红设计系统
+  app.js                  # 拖拽、校验、搜索、保存
+src/
+  web_app.py              # Starlette API
+  catalog_db.py           # SQLite schema、provenance、plan persistence
+  planner.py              # 无 UI 依赖的 prerequisite planner
+  integrations/
+    madgrades.py          # Madgrades token client
+scripts/
+  init_db.py              # 初始化本地数据库
+  sync_uwcourses.py       # 导入公开的 UW Courses Parquet snapshot
+tests/                    # planner、database、legacy UI tests
 ```
 
-### Installation
+## 运行新版网站
 
 ```bash
-# Clone the repository
-git clone https://github.com/Sherry1247/CourseOptimizer.git
-
-# Navigate to project directory
-cd CourseOptimizer
-
-# Install dependencies
-npm install
-
-# Set up environment variables
-cp .env.example .env
-# Edit .env with your configuration
-
-# Run the application
-npm start
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install -r requirements.txt
+python scripts\init_db.py
+python scripts\sync_uwcourses.py
+python -m uvicorn web_app:app --app-dir src --host 127.0.0.1 --port 8501
 ```
 
-## 📖 Usage
+打开 <http://127.0.0.1:8501>。
 
-### For Students
+运行测试：
 
-1. **Create an account** or log in
-2. **Enter your information**:
-   - Current academic standing (Freshman, Sophomore, etc.)
-   - Major(s) and minor(s)
-   - Completed credits
-3. **Set your preferences**:
-   - Preferred professors
-   - Course difficulty balance
-   - Schedule preferences (morning/afternoon/evening)
-4. **Generate your schedule**:
-   - View optimized 4-year plan
-   - Make adjustments as needed
-   - Export to your calendar
+```bash
+python -m unittest discover -s tests -v
+node --check web/static/app.js
+```
 
-### For Universities
+## 数据库设计
 
-CourseOptimizer can be integrated into your institution's academic advising system. Contact us for institutional partnerships.
+SQLite 数据库存储：
 
-## 🤝 Contributing
+- `sources`：来源、权威级别、访问时间和 terms URL
+- `catalog_versions`：catalog year 与导入状态
+- `programs`：专业、degree、school/college 和 Guide URL
+- `requirement_blocks`：`all_of`、`choose_n`、`min_credits`、`designation`
+- `requirement_options`：requirement block 中的课程候选
+- `courses`：课程代码、学分、课程描述、原始 requisite 文本和 provenance
+- `prerequisites`：结构化先修关系和 evidence text
+- `course_offerings`：常见开课季
+- `external_signals`：Madgrades 等外部指标、样本量和时间
+- `saved_plans` / `plan_items`：用户调整后的学期规划
 
-We welcome contributions from the community! Here's how you can help:
+数据库文件 `data/courseoptimizer.db` 会在本地生成，不提交到 Git。
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+## 数据可信度
 
-### Development Guidelines
+| 数据 | 来源 | 使用方式 |
+|---|---|---|
+| 专业要求 | UW–Madison Guide | 硬约束；必须按 catalog year 审核 |
+| 课程与 requisite 原文 | UW Guide；当前全量检索可由 UW Courses snapshot 派生 | 课程库与 prerequisite candidate |
+| 当期 section、时间、seat | Course Search & Enroll | 尚未实时接入 |
+| 学生正式完成情况 | DARS / 用户输入 | 当前由用户输入，DARS 是最终依据 |
+| 历史成绩 | Madgrades API | 软参考，不作为毕业硬约束 |
+| 教授评价 | Link-out / 未来正式授权数据 | 不将非官方抓取作为核心依赖 |
 
-- Follow the existing code style
-- Write clear commit messages
-- Add tests for new features
-- Update documentation as needed
+UW Courses 是开源第三方项目，不是 UW 官方。同步器只把它作为可追踪的派生课程快照；专业毕业要求不会以它替代 UW Guide。
 
-## 📊 Related Projects
+## Madgrades API
 
-- **RMP (RateMyProfessors)**: Professor rating integration
-- **Madgrades**: UW-Madison grade distribution visualizer
-- **Enroll Badge**: Course enrollment tracking
+Madgrades 当前要求用户在其官网通过 GitHub 登录取得 token。取得 token 后，在启动后端前设置：
 
-## 📝 License
+```bash
+set MADGRADES_API_TOKEN=your_token
+```
 
-This project is licensed under the [MIT License](LICENSE) - see the LICENSE file for details.
+`src/integrations/madgrades.py` 只在服务端读取该变量，不把 token 发给浏览器或写入仓库。由于 API contract 可能变化，实际 endpoint 应从账号中的当前文档配置，不依赖未记录的私有接口。
 
-## 👥 Team
+## 仍需完成的生产工作
 
-- Mckenna Xiang, Siqi Dai, Yinan Feng
+当前课程库已全量化，但专业 requirement blocks 仍是三个专业的 pilot core coverage。下一阶段应：
 
+1. 按 2026–2027 UW Guide 逐专业导入并人工复核 requirement blocks。
+2. 完整表达“任选 N 门”、最低学分、upper-level、residence、学校/学院间 double-count policy。
+3. 接入 current-term Course Search & Enroll section 数据。
+4. 对接 DARS 导入或学生授权的数据流程。
+5. 配置 Madgrades token，并缓存按课程、教师、学期聚合的分布数据。
+6. 加入账户、鉴权、PostgreSQL migration 和隐私策略后再部署为多人服务。
 
-## 🙏 Acknowledgments
-
-- RateMyProfessors for providing professor rating data
-- Madgrades for UW-Madison grade distributions
-- All contributors who have helped shape this project
-- The academic community for valuable feedback
-
-## 🗺️ Roadmap
-
-- [ ] Mobile app development (iOS/Android)
-- [ ] Integration with more universities
-- [ ] AI-powered course recommendations
-- [ ] Study group matching feature
-- [ ] Career path optimization
-- [ ] International university support
-
----
-
-**Made with ❤️ for students, by students**
-
-*Helping 200M+ students worldwide plan their academic journey*
+更详细的原型审计见 [docs/ANALYSIS.md](docs/ANALYSIS.md)。

@@ -6,7 +6,7 @@
       "code": "200",
       "name": "Programming I",
       "credits": 3,
-      "description": "Introduction to computer programming using Python. No prior programming experience required.",
+      "description": "Introduction to computer programming. Confirm the current language, requisites, and enrollment rules in the UW Guide.",
       "prerequisites": [],
       "grade_a_rate": 0.40,
       "avg_gpa": 3.2,
@@ -156,7 +156,7 @@
       "code": "222",
       "name": "Calculus and Analytic Geometry II",
       "credits": 4,
-      "description": "Sequences, series, multivariable calculus.",
+      "description": "Second-semester calculus. Confirm current topics and requisites in the UW Guide.",
       "prerequisites": ["MATH 221"],
       "grade_a_rate": 0.32,
       "avg_gpa": 2.8,
@@ -296,6 +296,8 @@
     "university": "University of Wisconsin-Madison",
     "last_updated": "2024-11-15",
     "academic_year": "2024-2025",
-    "data_source": "UW-Madison Course Guide"
+    "data_source": "Hackathon demo dataset initially based on UW-Madison Course Guide",
+    "status": "demo_only",
+    "disclaimer": "Requirements, offerings, grade statistics, workload, difficulty, and professor ratings are incomplete demo values and must be verified against current official sources."
   }
 }

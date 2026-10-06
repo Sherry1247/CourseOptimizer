@@ -2,143 +2,63 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BadgerPlan · UW–Madison Degree Planner</title>
-  <meta name="description" content="A personalized, prerequisite-aware degree planning workspace for UW–Madison students.">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>BadgerPlan · UW–Madison academic planning</title>
+  <meta name="description" content="Plan a UW–Madison degree, understand requirements, and discover courses using prerequisites and historical evidence.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%23c5050c'/%3E%3Cpath d='M9 8h9a5 5 0 0 1 0 10h-5v6H9zm4 4v2h5a1 1 0 0 0 0-2z' fill='white'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/refinements.css">
+  <link rel="stylesheet" href="/static/classic.css">
 </head>
-<body>
+<body data-area="home">
   <header class="topbar">
-    <a class="brand" href="#" aria-label="BadgerPlan home">
-      <span class="crest">W</span>
-      <span><strong>BadgerPlan</strong><small>UW–Madison degree planner</small></span>
-    </a>
-    <nav>
-      <a href="#planner">Planner</a>
-      <a href="#requirements">Requirements</a>
-      <a href="#sources">Data sources</a>
-    </nav>
-    <div class="top-actions">
-      <span id="saveStatus" class="save-status">Not saved</span>
-      <button id="savePlan" class="button ghost">Save plan</button>
-    </div>
+    <a class="brand" href="/" data-route><span class="brand-mark" aria-hidden="true">W</span><span><span class="brand-name">BadgerPlan</span><span class="brand-sub" id="catalogBadge">UW–Madison academic planning</span></span></a>
+    <nav class="primary-nav" aria-label="Primary navigation"><a href="/" data-route data-nav="home">Home</a><a href="/plan" data-route data-nav="plan">Plan</a><a href="/explore/courses" data-route data-nav="explore">Explore</a></nav>
+    <div class="top-actions"><span class="save-status" id="saveStatus">Not saved</span><button class="btn quiet" id="openPlans">Open</button><button class="btn quiet" id="savePlan">Save</button><button class="btn quiet optional-action" id="exportPlan">Export</button><button class="icon-btn optional-action" id="printPlan" aria-label="Print plan" title="Print plan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v7H7z"/></svg></button></div>
   </header>
+  <div class="context-nav hidden" id="planNav" aria-label="Plan sections"><a href="/plan" data-route>Degree Plan</a><a href="/plan/requirements" data-route>Requirements</a><a href="/plan/double-major" data-route>Double Major</a></div>
+  <div class="context-nav hidden" id="exploreNav" aria-label="Explore sections"><a href="/explore/courses" data-route>Courses</a><a href="/explore/professors" data-route>Professors</a><a href="/explore/majors" data-route>Majors</a></div>
 
-  <main>
-    <section class="hero">
-      <div class="eyebrow"><span></span> Built for Badgers</div>
-      <h1>Your degree, mapped<br><em>with every prerequisite in view.</em></h1>
-      <p>Build a flexible UW–Madison plan around two majors, transfer credit, and your graduation target. Then drag any course to make the plan yours.</p>
-      <div class="source-strip">
-        <span>Academic rules</span><strong>UW Guide</strong>
-        <span>Degree check</span><strong>DARS</strong>
-        <span>Grade context</span><strong>Madgrades</strong>
-      </div>
-    </section>
+  <div class="layout">
+    <aside class="setup" id="setup" aria-label="Plan settings">
+      <div class="setup-mobile-head"><div><strong id="mobilePlanName">Degree plan</strong><span id="mobilePlanDates">Set your timeline</span></div><button class="icon-btn" id="closeSettings" aria-label="Close plan settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <form id="setupForm" autocomplete="off">
+        <section class="panel"><h2>Student and timeline</h2><div class="segmented" role="radiogroup" aria-label="Student type"><button type="button" class="seg active" data-student="first-year" role="radio" aria-checked="true">First-year</button><button type="button" class="seg" data-student="transfer" role="radio" aria-checked="false">Transfer</button></div><div class="stack-2"><label>First term at UW<span class="inline"><select id="startSeason"><option>Fall</option><option>Spring</option><option>Summer</option></select><select id="startYear" aria-label="Start year"></select></span></label><label>Graduate<span class="inline"><select id="gradSeason"><option>Spring</option><option>Fall</option><option>Summer</option></select><select id="gradYear" aria-label="Graduation year"></select></span></label></div><p class="hint" id="timelineHint"></p><div class="transfer-only hidden"><label>First college term anywhere<span class="inline"><select id="firstCollegeSeason"><option>Fall</option><option>Spring</option><option>Summer</option></select><select id="firstCollegeYear" aria-label="First college year"></select></span></label><p class="hint">Determines whether Core Gen Ed (Summer 2026+) or the previous Gen Ed applies.</p></div></section>
+        <section class="panel"><h2>Majors</h2><div id="majorList" class="major-list"></div><button type="button" class="text-action" id="addMajor">Add a second major</button><p class="hint">Courses that can count across majors are chosen first.</p></section>
+        <section class="panel"><div class="panel-heading"><h2 id="priorTitle">Credit you already have</h2><button type="button" class="text-action compact" id="openTranscript">Import transcript</button></div><p class="hint" id="priorHint">AP/IB, placement or transfer credit mapped to a UW course.</p><div class="combo"><input type="search" id="priorSearch" placeholder="MATH 221 or ECON 101" aria-label="Add prior credit" autocomplete="off"><div class="combo-list hidden" id="priorResults" role="listbox"></div></div><div class="chip-row" id="priorChips"></div><label>Other credits without a UW equivalent<input type="number" id="genericCredits" min="0" max="90" step="1" value="0"></label></section>
+        <section class="panel"><h2>Optimization</h2><label>Math placement<select id="mathPlacement"><option value="calculus">Calculus-ready (MATH 221)</option><option value="precalc">Pre-calculus (MATH 112–114)</option><option value="none">Not placed yet</option></select></label><label>Plan for<select id="priority"><option value="balanced">Balanced</option><option value="gpa">Higher historical grades</option><option value="fast">Fewest prerequisites</option></select></label><div class="grid-2"><label>Target credits / term<input type="number" id="targetCredits" min="6" max="18" value="15"></label><label>Hard cap<input type="number" id="maxCredits" min="6" max="24" value="17"></label></div><label class="check"><input type="checkbox" id="includeSummer"> Use summer terms</label><label class="check"><input type="checkbox" id="placeCommA"> Placed out of Comm A</label><label class="check"><input type="checkbox" id="placeQrA"> Placed out of QR-A</label></section>
+        <button type="submit" class="btn primary block" id="generateBtn"><span>Build my plan</span></button><p class="fine">Not an official UW tool. Confirm with DARS and your advisor.</p>
+      </form>
+    </aside>
+    <div class="settings-scrim hidden" id="settingsScrim"></div>
 
-    <section id="planner" class="workspace">
-      <aside class="setup-panel">
-        <div class="panel-heading">
-          <span class="step-number">01</span>
-          <div><h2>Tell us where you are</h2><p>Your plan starts from your real academic position.</p></div>
-        </div>
+    <main class="main" id="main">
+      <section class="view" id="view-home" aria-labelledby="homeTitle">
+        <div class="home-intro"><p class="product-line">BadgerPlan</p><h1 id="homeTitle">Plan your degree.<br>Explore your university.</h1><p>Find courses, understand requirements, and see what each choice changes.</p></div>
+        <div class="home-search search-combobox"><label for="homeSearch">What are you looking for?</label><div class="search-input-row"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input type="search" id="homeSearch" placeholder="CS 400, machine learning, professor, major…" autocomplete="off" aria-controls="homeSearchResults" aria-expanded="false"></div><div class="grouped-results hidden" id="homeSearchResults" role="listbox"></div></div>
+        <section class="continue-plan hidden" id="continuePlan" aria-labelledby="continueTitle"><div><p class="section-label" id="continueTitle">Continue your plan</p><h2 id="continueName">My degree plan</h2><p id="continueMeta"></p></div><div class="continue-status" id="continueStatus"></div><a class="btn primary" href="/plan" data-route>Open plan</a></section>
+        <div class="home-index"><section aria-labelledby="actionsTitle"><h2 id="actionsTitle">Academic work</h2><a class="index-row" href="/plan" data-route><span><strong>Plan a degree</strong><small>Build and adjust a semester-by-semester path.</small></span><span aria-hidden="true">→</span></a><a class="index-row" href="/explore/courses" data-route><span><strong>Explore courses</strong><small>Search by requirements, grades, prerequisites, and offering history.</small></span><span aria-hidden="true">→</span></a><a class="index-row" href="/plan/requirements" data-route><span><strong>Check requirements</strong><small>See what is complete, planned, uncertain, or missing.</small></span><span aria-hidden="true">→</span></a><a class="index-row" href="/plan/double-major" data-route><span><strong>Compare a second major</strong><small>Estimate overlap without changing your plan.</small></span><span aria-hidden="true">→</span></a></section><section aria-labelledby="collectionsTitle"><h2 id="collectionsTitle">Useful course collections</h2><a class="collection-row" href="/explore/courses?mode=easiest&tag=hum" data-route><strong>Humanities with higher historical grades</strong><span>Evidence-led, undergraduate, adequate sample</span></a><a class="collection-row" href="/explore/courses?requisites=none" data-route><strong>No listed prerequisites</strong><span>Courses with no parsed course or condition requisite</span></a><a class="collection-row" href="/explore/courses?tag=ethnic" data-route><strong>Ethnic Studies</strong><span>Courses carrying the UW designation</span></a><a class="collection-row" href="/explore/courses?frequency=every%20semester" data-route><strong>Frequently offered</strong><span>Historical evidence of Fall and Spring offerings</span></a></section></div>
+      </section>
 
-        <div class="field">
-          <label>I am entering as</label>
-          <div class="segmented" role="group" aria-label="Student type">
-            <button class="segment active" data-student-type="first-year">First-year</button>
-            <button class="segment" data-student-type="transfer">Transfer</button>
-          </div>
-        </div>
+      <section class="view" id="view-plan" aria-label="Degree Plan"><div class="mobile-plan-bar"><div><strong id="compactPlanName">Degree plan</strong><span id="compactPlanDates"></span></div><button class="btn" id="openSettings">Plan settings</button></div><div class="plan-head"><div><h1 id="planTitle">Your degree plan</h1><p class="subtle" id="planSubtitle">Choose a major and timeline, then build a plan.</p></div><div class="stats" id="stats"></div></div><div class="constraint-center hidden" id="alerts" role="status" tabindex="-1"></div><div class="legend" id="legend"><span class="lg lg-major">Major</span><span class="lg lg-shared">Both majors</span><span class="lg lg-prereq">Prerequisite</span><span class="lg lg-gened">Gen Ed / breadth</span><span class="lg lg-elective">Open elective</span><span class="lg lg-prior">Already earned</span></div><div class="board empty" id="board"><div class="empty-state"><h2>No plan yet</h2><p>Choose at least one major in Plan settings, then build your plan.</p><button class="btn primary" id="emptySettings">Open plan settings</button></div></div><div class="tray hidden" id="tray"><div class="tray-head"><h2>Not scheduled yet</h2><p>Move these into a term or extend the timeline.</p></div><div class="tray-courses" id="trayCourses" data-term-index="-1"></div></div></section>
+      <section class="view" id="view-audit" aria-label="Requirements"><div class="plan-head"><div><h1>Requirements</h1><p class="subtle">A DARS-style planning check. Official DARS remains the source of record.</p></div></div><div id="auditBody" class="audit-body"><div class="empty-state inline"><h2>No plan to audit</h2><p>Build a plan first to see requirements.</p></div></div></section>
+      <section class="view" id="view-double" aria-label="Double Major"><div class="plan-head"><div><h1>Double-major comparison</h1><p class="subtle">Search a specific major or compare estimated overlap recommendations. Comparing does not change your plan.</p></div></div><div class="major-compare-search"><label for="secondMajorSearch">Search second major</label><input type="search" id="secondMajorSearch" placeholder="Economics, Data Science, History…" autocomplete="off"><div id="secondMajorResults" class="lookup-results"></div></div><div id="majorComparison"></div><div class="section-head"><h2>Recommended compatible majors</h2><label>Sort<select id="doubleSort"><option value="overlap">Highest overlap</option><option value="additional">Lowest additional credits</option><option value="name">Program name</option></select></label></div><div id="doubleBody"><p class="subtle">Choose a first major to see recommendations.</p></div></section>
 
-        <div class="field-row">
-          <div class="field"><label for="startTerm">Starting term</label><select id="startTerm"><option>Fall</option><option>Spring</option></select></div>
-          <div class="field"><label for="startYear">Start year</label><select id="startYear"></select></div>
-        </div>
+      <section class="view" id="view-explore" aria-label="Explore courses"><div class="plan-head"><div><h1>Explore courses</h1><p class="subtle">Search official catalog fields and historical evidence. Add results directly to your plan.</p></div><a class="text-action" href="/explore/courses?mode=easiest" data-route>Browse easiest-course evidence</a></div><form class="discovery-controls" id="exploreForm"><label class="search-wide">Search<input type="search" id="exploreSearch" placeholder="Course code, title, topic, keyword, or instructor"></label><label>Department<select id="exploreDepartment"><option value="">All departments</option></select></label><label>Credits<select id="exploreCredits"><option value="">Any</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label><label>Level<select id="exploreLevel"><option value="">Any</option><option value="100-299">100–200</option><option value="300-499">300–400</option><option value="500-699">500–600</option></select></label><label>Designation<select id="exploreTag"><option value="">Any designation</option></select></label><label>Prerequisites<select id="exploreReq"><option value="">Any</option><option value="none">None listed</option><option value="listed">Listed</option></select></label><label>Historical GPA<select id="exploreGpa"><option value="">Any</option><option value="3.0">3.0+</option><option value="3.25">3.25+</option><option value="3.5">3.5+</option><option value="3.75">3.75+</option></select></label><label>Grade sample<select id="exploreSample"><option value="">Any</option><option value="30">30+</option><option value="100">100+</option><option value="300">300+</option></select></label><label>Usually offered<select id="exploreSeason"><option value="">Any season</option><option>Fall</option><option>Spring</option><option>Summer</option></select></label><label>Frequency<select id="exploreFrequency"><option value="">Any</option><option value="every semester">Every semester</option><option value="yearly">Yearly</option><option value="irregular">Irregular</option></select></label><button class="btn" type="button" id="clearFilters">Clear</button></form><div class="query-interpretation hidden" id="queryInterpretation"></div><div class="easiest-note hidden" id="easiestNote"><strong>Historical outcomes, not a difficulty score.</strong><span>Eligible courses exclude graduate study, independent study, theses, internships, clinical rotations, special topics, and thin grade histories. Compare the evidence, not just GPA.</span></div><div class="result-summary" id="exploreSummary">Use search or filters to explore the catalog.</div><div class="course-table-wrap"><table class="course-table"><thead><tr><th>Course</th><th>Title and plan fit</th><th>Credits</th><th>Historical grades</th><th>Prerequisites</th><th>Usually offered</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="exploreResults"></tbody></table></div></section>
+      <section class="view" id="view-professors" aria-label="Explore professors"><div class="plan-head"><div><h1>Explore professors</h1><p class="subtle">Historical teaching records and third-party RMP aggregates. Ratings are student opinions, not official UW data.</p></div></div><label class="standalone-search">Search by professor name<input type="search" id="professorSearch" placeholder="Professor name"></label><div class="data-list" id="professorResults"></div></section>
+      <section class="view" id="view-majors" aria-label="Explore majors"><div class="plan-head"><div><h1>Explore majors</h1><p class="subtle">Browse parsed UW Guide requirements and named options.</p></div></div><label class="standalone-search">Search majors<input type="search" id="programSearch" placeholder="Major, school, or department"></label><div class="data-list" id="programResults"></div><div id="programDetail"></div></section>
+      <section class="view" id="view-course" aria-label="Course detail"><div id="coursePage"></div></section><section class="view" id="view-professor" aria-label="Professor detail"><div id="professorPage"></div></section><section class="view" id="view-major" aria-label="Major detail"><div id="majorPage"></div></section>
+    </main>
+  </div>
 
-        <div class="field">
-          <label for="graduationYear">Target graduation year</label>
-          <select id="graduationYear"></select>
-          <small id="timelineHint">A standard four-year path</small>
-        </div>
-
-        <div class="divider"></div>
-        <div class="panel-heading compact">
-          <span class="step-number">02</span>
-          <div><h2>Choose your programs</h2><p>We find shared requirements automatically.</p></div>
-        </div>
-
-        <div class="field"><label for="primaryMajor">Primary major</label><select id="primaryMajor"></select></div>
-        <label class="toggle-row"><span><strong>Plan a double major</strong><small>Prioritize courses that count twice</small></span><input id="doubleMajor" type="checkbox"><i></i></label>
-        <div id="secondMajorField" class="field hidden"><label for="secondMajor">Second major</label><select id="secondMajor"></select></div>
-
-        <div class="divider"></div>
-        <div class="field">
-          <label for="completedSearch">Completed, AP/IB, or transfer courses</label>
-          <div class="token-input"><input id="completedSearch" placeholder="Search by course code"><div id="completedSuggestions" class="suggestions hidden"></div></div>
-          <div id="completedTokens" class="tokens"></div>
-          <small id="creditHelp">Add placement or incoming credit you already know.</small>
-        </div>
-
-        <div class="field"><label for="maxCredits">Major-course load <strong id="maxCreditsValue">15</strong> credits</label><input id="maxCredits" type="range" min="6" max="18" value="15"></div>
-        <button id="generatePlan" class="button primary full"><span>Generate my plan</span><span aria-hidden="true">→</span></button>
-      </aside>
-
-      <div class="plan-area">
-        <div class="plan-toolbar">
-          <div><span class="kicker">Personal workspace</span><h2 id="planTitle">Your four-year map</h2></div>
-          <div class="toolbar-actions">
-            <button id="openLibrary" class="button ghost">＋ Add a course</button>
-            <button id="exportPlan" class="button dark">Export JSON</button>
-          </div>
-        </div>
-
-        <div id="summary" class="summary-grid">
-          <article><small>Major courses</small><strong id="summaryCourses">—</strong><span>planned</span></article>
-          <article><small>Shared requirements</small><strong id="summaryOverlap">—</strong><span>double-major fit</span></article>
-          <article><small>Open issues</small><strong id="summaryIssues">—</strong><span>need attention</span></article>
-        </div>
-
-        <div id="alerts" class="alerts hidden"></div>
-        <div id="schedule" class="schedule-board empty-state">
-          <div class="empty-illustration"><span>1</span><i></i><span>2</span><i></i><span>3</span></div>
-          <h3>Ready when you are.</h3>
-          <p>Choose your starting point and majors, then generate a prerequisite-aware plan.</p>
-        </div>
-      </div>
-    </section>
-
-    <section id="requirements" class="requirements-section">
-      <div><span class="kicker">Transparent by design</span><h2>Every recommendation should answer “why?”</h2></div>
-      <div class="principles">
-        <article><span>01</span><h3>Official rules first</h3><p>Program rules are stored by catalog year with their UW Guide source—not inferred from ratings.</p></article>
-        <article><span>02</span><h3>Double-count visibly</h3><p>Shared requirements are labeled on the course card so you can see exactly what creates overlap.</p></article>
-        <article><span>03</span><h3>You stay in control</h3><p>Drag courses between terms. The planner flags prerequisite, offering, and credit-load conflicts immediately.</p></article>
-      </div>
-    </section>
-
-    <section id="sources" class="sources-section">
-      <div><span class="kicker light">Data architecture</span><h2>One plan. Clear provenance.</h2></div>
-      <div class="source-cards">
-        <a href="https://guide.wisc.edu/" target="_blank"><small>Authoritative</small><strong>UW–Madison Guide</strong><span>Programs, courses, requisites, catalog years ↗</span></a>
-        <a href="https://public.enroll.wisc.edu/" target="_blank"><small>Current term</small><strong>Course Search & Enroll</strong><span>Sections, times, seats, instructors ↗</span></a>
-        <a href="https://api.madgrades.com/" target="_blank"><small>Historical context</small><strong>Madgrades API</strong><span>Grade distributions with API token ↗</span></a>
-        <a href="https://registrar.wisc.edu/dars/" target="_blank"><small>Final verification</small><strong>DARS</strong><span>Your official degree audit ↗</span></a>
-      </div>
-      <p class="disclaimer">BadgerPlan is an independent planning tool and is not affiliated with UW–Madison. Always verify your final plan in DARS and with an academic advisor.</p>
-    </section>
-  </main>
-
-  <dialog id="courseLibrary" class="course-library">
-    <div class="library-header"><div><span class="kicker">Course library</span><h2>Add something to your plan</h2></div><button id="closeLibrary" aria-label="Close">×</button></div>
-    <input id="librarySearch" class="library-search" placeholder="Search COMP SCI, economics, calculus…">
-    <div id="libraryResults" class="library-results"></div>
-  </dialog>
-
-  <div id="toast" class="toast" role="status"></div>
-  <script src="/static/app.js" defer></script>
+  <aside class="drawer" id="drawer" aria-hidden="true" aria-label="Course quick view"><button class="drawer-close icon-btn" id="drawerClose" aria-label="Close course details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button><div id="drawerBody"></div></aside><div class="scrim hidden" id="scrim"></div>
+  <dialog id="plansDialog"><form method="dialog" class="dialog-body"><h2>Saved plans</h2><div id="plansList" class="data-list"></div><div class="dialog-actions"><label class="btn file-btn">Import JSON<input type="file" id="importFile" accept="application/json" hidden></label><button class="btn" value="close">Close</button></div></form></dialog>
+  <dialog id="addDialog"><form method="dialog" class="dialog-body"><h2 id="addDialogTitle">Add a course</h2><label>Search courses<input type="search" id="addSearch" placeholder="Course code, title, or topic"></label><div id="addResults" class="data-list"></div><div class="dialog-actions"><button class="btn" value="close">Close</button></div></form></dialog>
+  <dialog id="transcriptDialog" class="transcript-dialog" aria-labelledby="transcriptTitle"><div class="dialog-body"><div><p class="section-label">Prior credit</p><h2 id="transcriptTitle">Import a transcript</h2><p class="subtle">BadgerPlan matches course codes against its local UW catalog. Nothing is added until you review and confirm.</p></div><label class="upload-zone" for="transcriptFile"><strong>Choose transcript file</strong><span>PDF, TXT, CSV, TSV, or JSON · 12 MB max</span><input type="file" id="transcriptFile" accept=".pdf,.txt,.csv,.tsv,.json,application/pdf,text/plain,text/csv,application/json" hidden></label><div class="file-selection hidden" id="transcriptFileName"></div><details class="paste-transcript"><summary>Or paste transcript text</summary><label for="transcriptText">Transcript text<textarea id="transcriptText" rows="7" placeholder="Paste course history here…"></textarea></label></details><p class="privacy-note"><strong>Private by design:</strong> parsing happens in this local BadgerPlan app and is not sent to a third-party service. BadgerPlan does not save the source file.</p><div class="transcript-feedback hidden" id="transcriptFeedback" role="status" tabindex="-1"></div><div class="transcript-review hidden" id="transcriptReview"><div class="review-head"><div><h3>Review matches</h3><p class="subtle" id="transcriptSummary"></p></div><button class="text-action compact" type="button" id="toggleTranscriptRows">Clear all</button></div><div class="transcript-table-wrap"><table class="transcript-table"><thead><tr><th><span class="sr-only">Include</span></th><th>Course</th><th>Credits</th><th>Match</th></tr></thead><tbody id="transcriptRows"></tbody></table></div><p class="fine left">Credits shown use the UW catalog value. Confirm official equivalencies and earned credit in DARS.</p></div><div class="dialog-actions"><button class="btn" type="button" id="closeTranscript">Cancel</button><button class="btn primary" type="button" id="parseTranscript">Review courses</button><button class="btn primary hidden" type="button" id="importTranscript">Import selected</button></div></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastMessage"></span><button class="toast-action hidden" id="toastAction"></button></div>
+  <script type="module" src="/static/app.js"></script>
 </body>
 </html>

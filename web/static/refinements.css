@@ -1,0 +1,33 @@
+/* Hallmark · Workbench refinements · fold, status encoding, and responsive affordances */
+.home-intro {
+  padding-block: var(--space-lg) var(--space-xl);
+}
+
+.home-intro h1 {
+  font-size: clamp(2.3rem, 5.6vw, 4.4rem);
+}
+
+.card {
+  border-left-width: var(--rule-thin);
+  border-top-width: 2px;
+}
+
+.card.shared { border-top-color: var(--color-amber); }
+.card.prereq { border-top-color: var(--color-blue); }
+.card.gened { border-top-color: var(--color-teal); }
+.card.prior { border-top-color: var(--color-muted); }
+
+.primary-nav a,
+.context-nav a,
+.btn,
+.text-action,
+.index-row,
+.collection-row {
+  white-space: nowrap;
+}
+
+@media (min-width: 40rem) {
+  .home-intro {
+    padding-block: var(--space-xl) var(--space-2xl);
+  }
+}

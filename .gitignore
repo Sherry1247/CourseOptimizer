@@ -10,6 +10,7 @@ __pycache__/
 .venv/
 .streamlit/secrets.toml
 data/*.db
+data/raw/
 data/*.db-shm
 data/*.db-wal
 

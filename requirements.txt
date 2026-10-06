@@ -1,7 +1,9 @@
-streamlit>=1.64,<2
-starlette>=1.0,<2
+# runtime
+starlette>=0.37,<2
 uvicorn>=0.30,<1
-pandas>=2.2,<4
-pyarrow>=18,<26
-fastparquet>=2024.11,<2027
+pypdf>=5,<7
+# data refresh (scripts/scrape_uw_guide.py, scripts/fetch_uwcourses.py)
 requests>=2.31,<3
+beautifulsoup4>=4.12,<5
+# tests (starlette TestClient)
+httpx>=0.27,<1

@@ -1,112 +1,110 @@
-import sys
-from pathlib import Path
 import unittest
 
-
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-
-from planner import Catalog, Course, generate_plan, prerequisite_depth  # noqa: E402
+import helpers
+from planner import PlanRequest, generate_plan, term_sequence, validate_plan
+from requisites import evaluate
 
 
-class PlannerTests(unittest.TestCase):
+def plan_for(programs, **payload):
+    _, courses, aliases = helpers.catalog()
+    loaded = [helpers.program(p) for p in programs]
+    request = PlanRequest.from_payload({"programs": programs, **payload})
+    return generate_plan(courses, loaded, request, aliases), request, loaded
+
+
+class TermSequenceTests(unittest.TestCase):
+    def test_four_years(self):
+        terms = term_sequence("Fall", 2026, "Spring", 2030, include_summer=False)
+        self.assertEqual([t.label for t in terms][:3], ["Fall 2026", "Spring 2027", "Fall 2027"])
+        self.assertEqual(len(terms), 8)
+
+    def test_summers_and_spring_start(self):
+        terms = term_sequence("Spring", 2027, "Fall", 2028, include_summer=True)
+        self.assertEqual([t.label for t in terms], ["Spring 2027", "Summer 2027", "Fall 2027", "Spring 2028", "Summer 2028", "Fall 2028"])
+
+    def test_invalid_timeline(self):
+        with self.assertRaises(ValueError):
+            PlanRequest.from_payload({"programs": ["computer-sciences-bs"], "startYear": 2026, "gradYear": 2026, "gradSeason": "Spring"})
+
+
+class DoubleMajorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.catalog = Catalog.from_json(ROOT / "src" / "uw_madison_data.json")
+        cls.result, cls.request, cls.programs = plan_for(["computer-sciences-bs", "data-science-bs"],
+                                                         startYear=2026, gradYear=2030)
 
-    def test_catalog_references_are_consistent(self):
-        self.assertEqual([], self.catalog.validate())
+    def test_every_requirement_met(self):
+        audit = self.result["audit"]
+        for program in audit["programs"]:
+            self.assertEqual(program["summary"]["percent"], 100, program["name"])
+        self.assertGreaterEqual(audit["credits"]["planned"], 120)
+        self.assertFalse(self.result["unscheduled"])
 
-    def test_prerequisite_is_always_in_an_earlier_term(self):
-        result = generate_plan(
-            self.catalog,
-            ["Computer Sciences"],
-            start_term="Fall",
-            start_year=2026,
-            years=4,
-            max_credits_per_term=15,
-        )
-        positions = {
-            course.code: term_index
-            for term_index, term in enumerate(result.terms)
-            for course in term.courses
-        }
-        for term in result.terms:
-            for course in term.courses:
-                for prerequisite in course.prerequisites:
-                    self.assertLess(positions[prerequisite], positions[course.code])
+    def test_courses_are_shared_between_majors(self):
+        shared = set(self.result["audit"]["shared_courses"])
+        self.assertGreaterEqual(len(shared), 5)
+        self.assertIn("COMP SCI 300", shared)
 
-    def test_completed_course_unlocks_dependent_course(self):
-        result = generate_plan(
-            self.catalog,
-            ["Computer Sciences"],
-            completed_courses=["COMP SCI 200"],
-            start_term="Fall",
-            start_year=2026,
-            years=1,
-        )
-        first_term_codes = {course.code for course in result.terms[0].courses}
-        self.assertIn("COMP SCI 300", first_term_codes)
-        self.assertNotIn("COMP SCI 200", first_term_codes)
+    def test_prerequisites_come_first(self):
+        _, courses, _ = helpers.catalog()
+        seen: set[str] = set()
+        for term in self.result["terms"]:
+            this_term = {c["code"] for c in term["courses"]}
+            for card in term["courses"]:
+                info = courses.get(card["code"])
+                if not info:
+                    continue
+                ok = evaluate(info["requisites"], lambda c: c in seen, credits_earned=999,
+                              assume_placement=lambda code: (code or "").startswith("MATH"),
+                              coreq_ok=lambda c: c in this_term)
+                self.assertIsNot(ok, False, f"{card['code']} in {term['label']}")
+            seen |= this_term
 
-    def test_double_major_uses_union_and_reports_intersection(self):
-        result = generate_plan(
-            self.catalog,
-            ["Computer Sciences", "Mathematics"],
-            years=4,
-        )
-        cs = set(self.catalog.majors["Computer Sciences"]["required_courses"])
-        math = set(self.catalog.majors["Mathematics"]["required_courses"])
-        self.assertEqual(cs | math, set(result.required_courses))
-        self.assertEqual(cs & math, set(result.overlap_courses))
+    def test_no_validation_errors(self):
+        errors = [i for items in self.result["issues"].values() for i in items if i["level"] == "error"]
+        self.assertEqual(errors, [])
 
-    def test_credit_limit_is_respected(self):
-        result = generate_plan(
-            self.catalog,
-            ["Economics"],
-            years=5,
-            max_credits_per_term=6,
-        )
-        self.assertTrue(all(term.credits <= 6 for term in result.terms))
+    def test_moving_a_course_early_is_flagged(self):
+        _, courses, aliases = helpers.catalog()
+        terms = [dict(t, courses=list(t["courses"])) for t in self.result["terms"]]
+        late = next(c for c in terms[-3]["courses"] + terms[-4]["courses"] if c["code"].startswith("COMP SCI 5"))
+        for t in terms:
+            t["courses"] = [c for c in t["courses"] if c["code"] != late["code"]]
+        terms[0]["courses"].append(late)
+        result = validate_plan(courses, self.programs, self.request, {"terms": terms}, aliases)
+        self.assertTrue(any(i["level"] == "error" for i in result["issues"].get(late["code"], [])))
 
-    def test_term_offering_is_respected(self):
-        result = generate_plan(
-            self.catalog,
-            ["Mathematics"],
-            completed_courses=["MATH 221"],
-            start_term="Fall",
-            start_year=2026,
-            years=2,
-        )
-        math_222_term = next(
-            term for term in result.terms if any(c.code == "MATH 222" for c in term.courses)
-        )
-        self.assertEqual("Spring", math_222_term.term)
 
-    def test_missing_requirement_is_reported(self):
-        catalog = Catalog(
-            courses={"A 100": Course("A 100", "Intro", 3)},
-            majors={"Example": {"required_courses": ["A 100", "A 200"]}},
-        )
-        result = generate_plan(catalog, ["Example"])
-        self.assertEqual({"A 200"}, set(result.missing_catalog_courses))
+class StudentTypeTests(unittest.TestCase):
+    def test_prior_credit_is_not_rescheduled(self):
+        result, _, _ = plan_for(["economics-bs"], prior=[{"code": "ECON 101", "status": "ap"}, {"code": "MATH 221", "status": "ap"}])
+        planned = {c["code"] for t in result["terms"] for c in t["courses"]}
+        self.assertNotIn("ECON 101", planned)
+        self.assertNotIn("MATH 221", planned)
 
-    def test_non_requirement_prerequisite_is_added_to_plan(self):
-        catalog = Catalog(
-            courses={
-                "A 100": Course("A 100", "Foundation", 3),
-                "A 200": Course("A 200", "Required", 3, prerequisites=("A 100",)),
-            },
-            majors={"Example": {"required_courses": ["A 200"]}},
-        )
-        result = generate_plan(catalog, ["Example"], years=1)
-        self.assertEqual({"A 100"}, set(result.supporting_courses))
-        self.assertEqual("A 100", result.terms[0].courses[0].code)
-        self.assertEqual("A 200", result.terms[1].courses[0].code)
+    def test_transfer_short_timeline(self):
+        result, _, _ = plan_for(["economics-bs"], studentType="transfer", startSeason="Fall", startYear=2026,
+                                gradSeason="Spring", gradYear=2028, genericCredits=50,
+                                firstCollegeSeason="Fall", firstCollegeYear=2024,
+                                prior=[{"code": "ECON 101", "status": "transfer"}, {"code": "MATH 221", "status": "transfer"}])
+        self.assertEqual(len(result["terms"]), 4)
+        self.assertEqual(result["rules"]["gened"], "Legacy Gen Ed")  # first college term before Summer 2026
+        self.assertEqual(result["audit"]["programs"][0]["summary"]["percent"], 100)
 
-    def test_prerequisite_depth(self):
-        self.assertEqual(0, prerequisite_depth("COMP SCI 200", self.catalog.courses))
-        self.assertEqual(2, prerequisite_depth("COMP SCI 400", self.catalog.courses))
+    def test_first_year_gets_core_gened(self):
+        result, _, _ = plan_for(["economics-bs"], startYear=2026)
+        self.assertEqual(result["rules"]["gened"], "Core GenEd")
+
+    def test_corequisites_share_a_term(self):
+        result, _, _ = plan_for(["music-ba"])
+        term_of = {c["code"]: i for i, t in enumerate(result["terms"]) for c in t["courses"]}
+        self.assertEqual(term_of.get("MUSIC 122"), term_of.get("MUSIC 172"))
+
+    def test_language_sequence_is_expanded(self):
+        result, _, _ = plan_for(["spanish-ba"])
+        planned = {c["code"] for t in result["terms"] for c in t["courses"]}
+        self.assertIn("SPANISH 226", planned)
+        self.assertEqual(result["audit"]["programs"][0]["summary"]["percent"], 100)
 
 
 if __name__ == "__main__":

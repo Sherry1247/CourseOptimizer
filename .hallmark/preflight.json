@@ -1,0 +1,23 @@
+{
+  "scanned_at": "2026-10-04",
+  "framework": "Vanilla HTML, CSS, and ES modules served by Starlette",
+  "font_stack": "Red Hat Display + Red Hat Text via Google Fonts; system monospace for course codes",
+  "palette": "Existing UW red anchor preserved; semantic OKLCH tokens introduced in tokens.css",
+  "motion": "Motion-cut: no animation dependency; only short transform/opacity feedback with reduced-motion fallback",
+  "spacing": "4-point semantic spacing scale",
+  "preserved": [
+    "UW red accent",
+    "Red Hat typography",
+    "dense academic planner",
+    "flat productivity-tool hierarchy",
+    "existing routes, planner logic, persistence, and import/export"
+  ],
+  "introduced": [
+    "Workbench macrostructure",
+    "semantic token system",
+    "deep-link navigation",
+    "responsive tables and settings sheet",
+    "constraint-first feedback",
+    "Hallmark slop-test discipline"
+  ]
+}

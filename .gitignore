@@ -37,3 +37,4 @@ data/*.db-wal
 *.zip
 *.tar.gz
 *.rar
+data/enroll/cache/

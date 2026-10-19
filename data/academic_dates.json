@@ -1,0 +1,39 @@
+{
+  "updated": "2026-10-18",
+  "sources": {
+    "appointments": {
+      "name": "Office of the Registrar: Enrollment appointment times",
+      "url": "https://registrar.wisc.edu/enrollment-appointment-times/"
+    },
+    "deadlines": {
+      "name": "Course Search & Enroll session dates",
+      "url": "https://public.enroll.wisc.edu/"
+    },
+    "standing": {
+      "name": "L&S class standing (KB 21122)",
+      "url": "https://kb.wisc.edu/ls/page.php?id=21122"
+    },
+    "calendar": {
+      "name": "Academic calendar",
+      "url": "https://secfac.wisc.edu/academic-calendar/"
+    }
+  },
+  "standing_thresholds": {"Freshman": 0, "Sophomore": 24, "Junior": 54, "Senior": 86},
+  "appointments": {
+    "1274": {
+      "published": true,
+      "windows": [
+        {"group": "Senior", "start": "2026-11-10", "end": "2026-11-12"},
+        {"group": "Junior", "start": "2026-11-12", "end": "2026-11-16"},
+        {"group": "Sophomore", "start": "2026-11-17", "end": "2026-11-20"},
+        {"group": "Freshman", "start": "2026-11-20", "end": "2026-11-24"}
+      ],
+      "note": "Your exact appointment time is in Student Center. Groups with many students are spread across several days."
+    },
+    "1282": {
+      "published": false,
+      "estimate": {"start": "2027-04-12", "end": "2027-04-30"},
+      "note": "Fall courses usually appear in early March and priority enrollment usually begins in mid-April. Dates are estimates until the Registrar posts them."
+    }
+  }
+}

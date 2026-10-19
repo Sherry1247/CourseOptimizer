@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import json
+import mimetypes
+import os
 from pathlib import Path
 import threading
 import base64
@@ -29,10 +31,19 @@ from analysis import compare_programs, rank_second_majors
 from degree_rules import PROFILES, degree_rules, gened_rules
 from ingest.designations import TAG_LABELS
 from planner import PlanRequest, generate_plan, validate_plan
-from transcript import parse_transcript
+from transcript import parse_transcript, resolve_candidates
+import enroll
+import timeline as tl
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC_DIR = ROOT / "web" / "static"
+# On a shared public deployment the server must not hold one list of everyone's
+# plans; saved plans then stay in each visitor's browser instead.
+PUBLIC = os.environ.get("BADGERPLAN_PUBLIC") == "1"
+# Windows can map .js/.mjs to text/plain in the registry, which browsers refuse
+# for ES modules. Pin the types the front end needs.
+for _ext, _type in ((".js", "text/javascript"), (".mjs", "text/javascript"), (".json", "application/json"), (".ics", "text/calendar")):
+    mimetypes.add_type(_type, _ext)
 
 
 class CatalogState:
@@ -47,6 +58,7 @@ class CatalogState:
         self.program_index = db.list_programs(self.connection)
         self._programs: dict[str, dict] = {}
         self.meta = db.meta(db_path)
+        self.enroll = enroll.EnrollStore()
 
     def program(self, program_id: str) -> dict:
         if program_id not in self._programs:
@@ -109,6 +121,7 @@ async def meta(_: Request) -> JSONResponse:
         **{k: v for k, v in s.meta.items() if k in {"catalog_year", "built_at", "stats", "sources"}},
         "tags": TAG_LABELS,
         "profiles": {key: title for key, (title, _) in PROFILES.items()},
+        "public": PUBLIC,
     })
 
 
@@ -315,7 +328,7 @@ async def plan_generate(request: Request) -> JSONResponse:
     try:
         payload = await request.json()
         s, plan_request, loaded = await _request_and_programs(payload)
-        result = generate_plan(s.courses, loaded, plan_request, s.aliases)
+        result = generate_plan(s.courses, loaded, plan_request, s.aliases, s.enroll.offered)
         return JSONResponse(result)
     except KeyError as exc:
         return error(str(exc), 404)
@@ -327,7 +340,7 @@ async def plan_validate(request: Request) -> JSONResponse:
     try:
         payload = await request.json()
         s, plan_request, loaded = await _request_and_programs(payload)
-        result = validate_plan(s.courses, loaded, plan_request, payload.get("plan") or {}, s.aliases)
+        result = validate_plan(s.courses, loaded, plan_request, payload.get("plan") or {}, s.aliases, s.enroll.offered)
         return JSONResponse(result)
     except KeyError as exc:
         return error(str(exc), 404)
@@ -335,13 +348,70 @@ async def plan_validate(request: Request) -> JSONResponse:
         return error(str(exc))
 
 
+# ----------------------------------------------------------------------------- terms, sections, timeline
+
+async def terms(_: Request) -> JSONResponse:
+    s = state()
+    current, upcoming = tl.current_and_next_term()
+    return JSONResponse({"terms": s.enroll.term_summary(), "current": {"season": current[0], "year": current[1]},
+                         "next": {"season": upcoming[0], "year": upcoming[1]}, "live": s.enroll.live})
+
+
+async def term_sections(request: Request) -> JSONResponse:
+    s = state()
+    term = request.path_params["term"]
+    codes = [c.strip() for c in request.query_params.get("codes", "").split(",") if c.strip()][:12]
+    if not codes:
+        return error("Pass one or more course codes in ?codes=")
+    results = {}
+    for code in codes:
+        canonical = code if code in s.courses else s.aliases.get(" ".join(code.upper().split()), code)
+        data = s.enroll.packages(term, canonical or code)
+        offered = None
+        snapshot = s.enroll.terms.get(term)
+        if snapshot and snapshot.get("offered"):
+            keys = set(s.enroll._offered.get(term, set()))
+            offered = any(k in keys for k in enroll.course_keys(canonical or code))
+        results[code] = {"offered": offered if data is None else data.get("offered", offered), **(data or {"packages": None})}
+    session = s.enroll.session(term, "A1")
+    return JSONResponse({"term": term, "name": enroll.term_name(term), "regular_session": session, "courses": results})
+
+
+async def timeline_view(request: Request) -> JSONResponse:
+    s = state()
+    standing = request.query_params.get("standing") or None
+    return JSONResponse(tl.build_timeline(s.enroll, tl.load_dates(), standing=standing,
+                                          include_past=request.query_params.get("past") == "1"))
+
+
+async def catalog_resolve(request: Request) -> JSONResponse:
+    """Map course-code guesses from the in-browser transcript reader to catalog courses."""
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        return error("Send JSON: {\"candidates\": [[\"COMP SCI 400\", \"SCI 400\"], ...]}")
+    candidates = payload.get("candidates") if isinstance(payload, dict) else None
+    if not isinstance(candidates, list):
+        return error("candidates must be a list of lists of strings")
+    s = state()
+    return JSONResponse({"results": resolve_candidates(candidates, s.courses, s.aliases)})
+
+
+def _public_plans_refusal() -> JSONResponse:
+    return error("On the public site, saved plans are kept in your browser.", 403)
+
+
 async def plans_list(_: Request) -> JSONResponse:
+    if PUBLIC:
+        return _public_plans_refusal()
     s = state()
     with s.lock:
         return JSONResponse(db.list_plans(s.connection))
 
 
 async def plans_create(request: Request) -> JSONResponse:
+    if PUBLIC:
+        return _public_plans_refusal()
     try:
         payload = await request.json()
     except json.JSONDecodeError:
@@ -355,6 +425,8 @@ async def plans_create(request: Request) -> JSONResponse:
 
 
 async def plans_item(request: Request) -> JSONResponse:
+    if PUBLIC:
+        return _public_plans_refusal()
     s = state()
     plan_id = request.path_params["plan_id"]
     if request.method == "DELETE":
@@ -390,6 +462,10 @@ routes = [
     Route("/api/courses/{code:path}", course_detail),
     Route("/api/gened", gened_preview),
     Route("/api/plan/generate", plan_generate, methods=["POST"]),
+    Route("/api/terms", terms),
+    Route("/api/terms/{term}/sections", term_sections),
+    Route("/api/timeline", timeline_view),
+    Route("/api/catalog/resolve", catalog_resolve, methods=["POST"]),
     Route("/api/plan/validate", plan_validate, methods=["POST"]),
     Route("/api/plans", plans_list, methods=["GET"]),
     Route("/api/plans", plans_create, methods=["POST"]),

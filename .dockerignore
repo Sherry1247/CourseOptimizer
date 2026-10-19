@@ -1,0 +1,14 @@
+.git
+.venv
+.vscode
+.hallmark
+.pytest_cache
+**/__pycache__
+legacy
+docs
+tests
+data/raw
+data/*.db
+data/*.db-*
+data/enroll/cache
+node_modules

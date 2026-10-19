@@ -34,18 +34,40 @@ python -m uvicorn web_app:app --app-dir src --host 127.0.0.1 --port 8501
 
 打开 <http://127.0.0.1:8501>。
 
+下学期真实课表（section、时间、教室、余座）：在能访问 public.enroll.wisc.edu 的电脑上运行时，BadgerPlan 会按课程实时获取并缓存到 `data/enroll/cache/`；也可以一次性保存整个学期：
+
+```bash
+python scripts/fetch_enroll.py --term 1274     # Spring 2027 全部课程的 section（约 6 千次请求，十几分钟）
+python scripts/fetch_enroll.py --offered-only   # 只更新每学期开课列表和 add/drop 日期（几秒）
+```
+
+离线使用时设置 `BADGERPLAN_OFFLINE=1`，只用已保存的快照。
+
 测试：
 
 ```bash
 python -m unittest discover -s tests -v
+node --test tests/js/transcript.test.mjs tests/js/schedule.test.mjs
 node --check web/static/app.js
 ```
+
+## 部署成公开网站
+
+仓库自带 `Dockerfile` 和 Render 的 `render.yaml`：
+
+1. 把代码推到 GitHub。
+2. 在 [Render](https://render.com) 用 GitHub 登录 → **New → Blueprint** → 选这个仓库 → **Apply**（免费档，不需要信用卡）。
+3. 几分钟后得到 `https://badgerplan-xxxx.onrender.com`。之后每次 push 到 main 都会自动重新部署。
+
+公开模式（`BADGERPLAN_PUBLIC=1`）下，保存的方案只存在每个访问者自己的浏览器里，服务器不保存任何人的方案或成绩单；下学期课表由服务器实时向 Course Search & Enroll 查询。免费档闲置 15 分钟后会休眠，下一次打开需要等约半分钟唤醒。其他 Docker 平台（Fly.io、Railway）用同一个 Dockerfile 即可，平台会通过 `PORT` 环境变量指定端口。
 
 ## 架构
 
 ```text
 data/
   snapshot/badgerplan-2026-27.json.gz   # 已提交的规范化目录快照（4 MB，可 diff）
+  enroll/<term>.json.gz                 # Course Search & Enroll 学期快照：学期日期、各 session 的 add/drop 截止日、开课列表、section
+  academic_dates.json                   # 注册处公布的选课预约时间（按年级）与年级学分线
   badgerplan.db                         # 本地生成的 SQLite（git 忽略）
   raw/                                  # 原始抓取数据（git 忽略，可由脚本重建）
 scripts/
@@ -53,6 +75,9 @@ scripts/
   fetch_uwcourses.py     # 下载 uw-coursemap-data（Madgrades 历史 + RMP 汇总）
   build_snapshot.py      # 原始数据 → 规范化快照（解析要求、先修、开课季节、成绩、教师）
   init_db.py             # 快照 → SQLite
+  fetch_enroll.py        # Course Search & Enroll → data/enroll/<term>.json.gz
+  build_campus_map.py    # 首页校园地图数据
+  fill_descriptions.py   # 补全旧快照中被截断的课程描述
 src/
   ingest/
     codes.py             # 课程代码规范化；交叉列名（COMP SCI/MATH 240）别名
@@ -67,7 +92,11 @@ src/
   catalog_db.py          # SQLite schema 与查询
   transcript.py          # Transcript 文本 → 本地课程目录的保守匹配（导入前复核）
   web_app.py             # Starlette API + 可扩展的分组 discovery search
+  enroll.py              # Enroll 学期数据：快照读取、开课确认（三值）、section 解析、实时查询 + 缓存
+  timeline.py            # 选课预约窗口 + add/drop 截止日 → 个人化时间线
 web/static/              # 无构建步骤的前端（index.html / styles.css / app.js / campus-map.json）
+  transcript.js          # 浏览器内读取成绩单（PDF 用 vendor/pdfjs），只把课号发给服务器
+  schedule.js            # 下学期课表求解 + .ics 导出
 tests/                   # 50 个当前单元 / 集成测试（另保留 1 个旧 Streamlit 测试）
 legacy/                  # hackathon 原型（Java optimizer、Streamlit、旧静态页）
 ```
@@ -96,8 +125,12 @@ WHERE o.course_code = 'COMP SCI 400' AND b.section = 'major';
 | GET | `/api/programs/{id}/second-majors` | 双专业重合排名 |
 | GET | `/api/courses?q=&tag=` · `/api/courses/{code}` | 搜索 / 课程详情（成绩、教师、先修树、解锁课程、计入哪些专业） |
 | POST | `/api/plan/generate` | 生成方案 |
-| POST | `/api/plan/validate` | 校验用户编辑后的方案并返回完整 audit |
-| POST | `/api/transcript/parse` | 解析 transcript 文本/PDF，只返回待复核的本地课程匹配，不直接写入计划 |
+| POST | `/api/plan/validate` | 校验用户编辑后的方案并返回完整 audit；`offerings` 标出已确认在已发布课表上的课 |
+| POST | `/api/catalog/resolve` | 浏览器读成绩单后只发送课号猜测（如 `["COMP SCI 400","SCI 400"]`），返回目录课程；成绩不离开浏览器 |
+| POST | `/api/transcript/parse` | 旧版服务器端解析（保留兼容） |
+| GET | `/api/terms` | Enroll 学期：上课起止、常规 session 的 add / 无 DR 退课 / 退课 / 修改截止日 |
+| GET | `/api/terms/{term}/sections?codes=` | 每门课的 section、时间、教室、余座（快照 → 缓存 → 实时） |
+| GET | `/api/timeline?standing=` | 个人化关键日期：本年级的选课预约窗口 + add/drop 截止日（带来源） |
 | GET/POST/DELETE | `/api/plans` · `/api/plans/{id}` | 保存的方案 |
 
 ## 更新数据（每学年一次）

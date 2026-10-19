@@ -2,6 +2,8 @@
 starlette>=0.37,<2
 uvicorn>=0.30,<1
 pypdf>=5,<7
+# time zones for Madison dates (Windows and slim containers ship no tz database)
+tzdata>=2024.1
 # data refresh (scripts/scrape_uw_guide.py, scripts/fetch_uwcourses.py)
 requests>=2.31,<3
 beautifulsoup4>=4.12,<5

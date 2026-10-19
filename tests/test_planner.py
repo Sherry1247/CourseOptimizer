@@ -109,3 +109,22 @@ class StudentTypeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PublishedScheduleTests(unittest.TestCase):
+    """A confirmed term schedule overrides offering history in planning and validation."""
+
+    def test_not_offered_course_is_flagged_and_offered_one_confirmed(self):
+        from planner import PlanRequest, validate_plan
+        catalog = {
+            "AAA 100": {"code": "AAA 100", "credits": [3, 3], "seasons": ["Fall", "Spring"], "requisites": None, "tags": [], "last_taught": "Spring 2026"},
+            "BBB 200": {"code": "BBB 200", "credits": [3, 3], "seasons": ["Fall", "Spring"], "requisites": None, "tags": [], "last_taught": "Spring 2026"},
+        }
+        program = {"id": "p", "name": "P", "degree": "BS", "college": "L&S", "guide_url": "", "profile": "GENERIC", "blocks": [], "confidence": "high"}
+        request = PlanRequest(program_ids=["p"], start_season="Spring", start_year=2027, grad_season="Spring", grad_year=2029)
+        plan = {"terms": [{"id": "2027-spring", "season": "Spring", "year": 2027, "courses": [{"code": "AAA 100", "credits": 3}, {"code": "BBB 200", "credits": 3}]}]}
+        offered = lambda season, year, code: (code == "AAA 100") if (season, year) == ("Spring", 2027) else None
+        result = validate_plan(catalog, [program], request, plan, {}, offered)
+        self.assertTrue(result["offerings"]["AAA 100"]["offered"])
+        self.assertFalse(result["offerings"]["BBB 200"]["offered"])
+        self.assertTrue(any("published Spring 2027" in issue["message"] for issue in result["issues"]["BBB 200"]))

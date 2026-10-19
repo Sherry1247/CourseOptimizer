@@ -1,0 +1,11 @@
+# Render Blueprint: New > Blueprint > pick this repository.
+services:
+  - type: web
+    name: badgerplan
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: BADGERPLAN_PUBLIC
+        value: "1"

@@ -1,10 +1,16 @@
 // BadgerPlan front end — vanilla ES module, no build step.
+import * as TX from "/static/transcript.js";
+import * as SCH from "/static/schedule.js";
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const esc = (v = "") => String(v).replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c]));
 const enc = encodeURIComponent;
 const SEASONS = { Spring: 0, Summer: 1, Fall: 2 };
 const THIS_YEAR = new Date().getFullYear();
+// The next fall that has not started yet: the default first term for a new student.
+const NEXT_FALL = new Date().getMonth() >= 8 ? THIS_YEAR + 1 : THIS_YEAR;
+const STANDINGS = ["Freshman", "Sophomore", "Junior", "Senior"];
+const STANDING_CREDITS = { Freshman: 0, Sophomore: 24, Junior: 54, Senior: 86 };
 const STORE_KEY = "badgerplan:v2";
 
 const state = {
@@ -23,11 +29,12 @@ const state = {
 function defaultSettings() {
   return {
     studentType: "first-year",
-    startSeason: "Fall", startYear: THIS_YEAR,
-    gradSeason: "Spring", gradYear: THIS_YEAR + 4,
+    yearInSchool: "incoming",
+    startSeason: "Fall", startYear: NEXT_FALL,
+    gradSeason: "Spring", gradYear: NEXT_FALL + 4,
     firstCollegeSeason: "Fall", firstCollegeYear: THIS_YEAR - 1,
     majors: [],               // [{id, variants:{group:name}}]
-    prior: [],                // [{code, status, credits}]
+    prior: [],                // [{code, status, credits, term?, grade?, source?}]
     genericCredits: 0,
     mathPlacement: "calculus",
     priority: "balanced",
@@ -70,7 +77,7 @@ function buildYearSelects() {
 }
 
 function bindSetup() {
-  $$(".seg").forEach(btn => btn.addEventListener("click", () => {
+  $$("#setupForm .seg[data-student]").forEach(btn => btn.addEventListener("click", () => {
     state.settings.studentType = btn.dataset.student;
     renderSetup();
     markDirty();
@@ -89,6 +96,7 @@ function bindSetup() {
     markDirty();
     if (state.plan && id !== "includeSummer") validateSoon();
   }));
+  $("#yearInSchool").addEventListener("change", e => setYearInSchool(e.target.value));
   $("#addMajor").addEventListener("click", () => addMajorRow());
   $("#setupForm").addEventListener("submit", e => { e.preventDefault(); generate(); });
   bindPriorSearch();
@@ -96,7 +104,8 @@ function bindSetup() {
 
 function renderSetup() {
   const s = state.settings;
-  $$(".seg").forEach(btn => {
+  $("#yearInSchool").value = s.yearInSchool || "incoming";
+  $$("#setupForm .seg[data-student]").forEach(btn => {
     const on = btn.dataset.student === s.studentType;
     btn.classList.toggle("active", on);
     btn.setAttribute("aria-checked", on);
@@ -118,19 +127,86 @@ function renderSetup() {
 }
 
 function updateTimelineHint() {
-  const s = state.settings;
-  const start = s.startYear * 3 + SEASONS[s.startSeason];
+  const s = state.settings, w = planWindow();
+  const start = w.start.year * 3 + SEASONS[w.start.season];
   const end = s.gradYear * 3 + SEASONS[s.gradSeason];
-  if (end <= start) { $("#timelineHint").textContent = "Graduation must be after your first term."; return; }
+  if (end <= start) { $("#timelineHint").textContent = `Graduation must be after ${TX.termLabel(w.start)}.`; renderStanding(); return; }
   let regular = 0;
-  let season = s.startSeason, year = s.startYear;
+  let season = w.start.season, year = w.start.year;
   for (let guard = 0; guard < 40; guard++) {
     if (season !== "Summer") regular++;
     if (year * 3 + SEASONS[season] >= end) break;
     if (season === "Fall") { season = "Spring"; year++; } else if (season === "Spring") season = "Summer"; else season = "Fall";
   }
-  $("#timelineHint").textContent = `${regular} fall/spring terms · ${s.startSeason} ${s.startYear} → ${s.gradSeason} ${s.gradYear}`;
-  $("#compactPlanDates").textContent = `${s.startSeason} ${s.startYear} → ${s.gradSeason} ${s.gradYear} · ${regular} terms`;
+  const from = w.current ? `planning from ${TX.termLabel(w.start)}` : `${s.startSeason} ${s.startYear}`;
+  $("#timelineHint").textContent = `${regular} fall/spring term${regular === 1 ? "" : "s"} · ${from} → ${s.gradSeason} ${s.gradYear}`;
+  $("#compactPlanDates").textContent = `${TX.termLabel(w.start)} → ${s.gradSeason} ${s.gradYear} · ${regular} terms`;
+  renderStanding();
+}
+
+// ------------------------------------------------------------------ where the student is now
+// Terms before the upcoming one are history (from the transcript); the plan covers the rest.
+function nextRegularTerm(t) {
+  return t.season === "Fall" ? { season: "Spring", year: t.year + 1 } : { season: "Fall", year: t.year };
+}
+function upcomingTerm() {
+  const now = TX.currentTerm();
+  return now.season === "Summer" ? { season: "Fall", year: now.year } : nextRegularTerm(now);
+}
+function planWindow() {
+  const s = state.settings;
+  const start = { season: s.startSeason, year: s.startYear };
+  const now = TX.currentTerm();
+  const history = s.prior.filter(p => p.term).map(p => TX.parseTermLabel(p.term)).filter(Boolean);
+  const current = TX.termKey(start) <= TX.termKey(now) || history.length > 0;
+  if (!current) return { start, current: false, history: [], assumedCredits: 0 };
+  let first = upcomingTerm();
+  const latest = history.reduce((m, t) => (TX.termKey(t) > TX.termKey(m) ? t : m), history[0] || start);
+  if (history.length && TX.termKey(latest) >= TX.termKey(first)) first = nextRegularTerm(latest);
+  if (TX.termKey(first) < TX.termKey(start)) first = start;
+  const transcriptCredits = TX.standingFrom(s.prior.filter(p => p.term || p.source === "transcript")).earned;
+  const assumed = !history.length && s.yearInSchool !== "incoming" ? STANDING_CREDITS[s.yearInSchool] || 0 : 0;
+  return { start: first, current: true, history, assumedCredits: transcriptCredits ? 0 : assumed };
+}
+function standingInfo() {
+  const s = state.settings;
+  const counted = s.prior.map(p => ({ ...p, include: true }));
+  const st = TX.standingFrom(counted, s.genericCredits);
+  const fromTranscript = s.prior.some(p => p.source === "transcript" || p.term);
+  return { ...st, fromTranscript, chosen: s.yearInSchool || "incoming" };
+}
+function renderStanding() {
+  const info = standingInfo(), w = planWindow(), s = state.settings, hint = $("#standingHint");
+  if (!hint) return;
+  if (info.fromTranscript) {
+    hint.innerHTML = `From your transcript: <b>${info.earned}</b> credits earned${info.inProgress ? ` + ${info.inProgress} in progress` : ""} → <b>${info.projected}</b> standing.${info.projected !== s.yearInSchool && s.yearInSchool !== "incoming" ? ` <button type="button" class="text-action compact" id="useStanding">Use ${info.projected}</button>` : ""}`;
+    $("#useStanding")?.addEventListener("click", () => setYearInSchool(info.projected, { keepTerms: true }));
+  } else if (s.yearInSchool === "incoming") {
+    hint.textContent = "New students enroll at SOAR. Add AP, IB or transfer credit below.";
+  } else {
+    hint.innerHTML = `Plan starts ${esc(TX.termLabel(w.start))}. Until you import a transcript, about ${STANDING_CREDITS[s.yearInSchool]} earned credits are assumed for ${esc(s.yearInSchool.toLowerCase())} standing. <button type="button" class="text-action compact" id="hintImport">Import transcript</button>`;
+    $("#hintImport")?.addEventListener("click", () => openTranscriptDialog());
+  }
+}
+function setYearInSchool(value, options = {}) {
+  const s = state.settings;
+  s.yearInSchool = value;
+  if (!options.keepTerms) {
+    const hasHistory = s.prior.some(p => p.term);
+    if (value === "incoming") {
+      if (TX.termKey({ season: s.startSeason, year: s.startYear }) <= TX.termKey(TX.currentTerm())) { s.startSeason = "Fall"; s.startYear = NEXT_FALL; s.gradSeason = "Spring"; s.gradYear = NEXT_FALL + 4; }
+    } else if (!hasHistory) {
+      // Estimate when a student in this year started, assuming a fall start and four years.
+      const now = TX.currentTerm();
+      const fallOfThisYear = now.season === "Fall" ? now.year : now.year - 1;
+      const yearsIn = STANDINGS.indexOf(value);
+      s.startSeason = "Fall"; s.startYear = fallOfThisYear - yearsIn;
+      s.gradSeason = "Spring"; s.gradYear = s.startYear + 4;
+    }
+  }
+  renderSetup();
+  markDirty();
+  loadTimeline(true);
 }
 
 // majors -----------------------------------------------------------------
@@ -268,10 +344,7 @@ function bindPriorSearch() {
 function bindTranscriptImport() {
   const dialog = $("#transcriptDialog");
   const fileInput = $("#transcriptFile");
-  $("#openTranscript").addEventListener("click", () => {
-    resetTranscriptDialog();
-    dialog.showModal();
-  });
+  $("#openTranscript").addEventListener("click", openTranscriptDialog);
   $("#closeTranscript").addEventListener("click", () => dialog.close());
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
@@ -282,13 +355,18 @@ function bindTranscriptImport() {
   $("#parseTranscript").addEventListener("click", parseTranscriptUpload);
   $("#importTranscript").addEventListener("click", importTranscriptMatches);
   $("#toggleTranscriptRows").addEventListener("click", () => {
-    const checks = $$("[data-transcript-code]", $("#transcriptRows"));
+    const checks = $$("[data-transcript-row]", $("#transcriptRows"));
     const select = checks.every(check => !check.checked);
     checks.forEach(check => { check.checked = select; });
     $("#toggleTranscriptRows").textContent = select ? "Clear all" : "Select all";
     updateTranscriptImportCount();
   });
   $("#transcriptRows").addEventListener("change", updateTranscriptImportCount);
+}
+
+function openTranscriptDialog() {
+  resetTranscriptDialog();
+  $("#transcriptDialog").showModal();
 }
 
 function resetTranscriptDialog() {
@@ -310,107 +388,122 @@ function formatBytes(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function bytesToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  for (let start = 0; start < bytes.length; start += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(start, start + 0x8000));
-  }
-  return btoa(binary);
-}
+const STATUS_TEXT = { ap: "AP / IB / test", transfer: "Transfer", completed: "Taken at UW", "in-progress": "In progress" };
 
 async function parseTranscriptUpload() {
   const button = $("#parseTranscript");
   const feedback = $("#transcriptFeedback");
   const file = $("#transcriptFile").files?.[0];
   const pasted = $("#transcriptText").value.trim();
-  if (!file && !pasted) {
-    feedback.textContent = "Choose a transcript file or paste transcript text first.";
-    feedback.className = "transcript-feedback error";
-    feedback.focus();
-    return;
-  }
-  if (file && file.size > 12 * 1024 * 1024) {
-    feedback.textContent = "That file is larger than the 12 MB limit.";
-    feedback.className = "transcript-feedback error";
-    feedback.focus();
-    return;
-  }
+  const fail = message => { feedback.textContent = message; feedback.className = "transcript-feedback error"; feedback.focus(); };
+  if (!file && !pasted) return fail("Choose a transcript file or paste transcript text first.");
+  if (file && file.size > 12 * 1024 * 1024) return fail("That file is larger than the 12 MB limit.");
   button.disabled = true;
   button.textContent = "Reading transcript…";
   feedback.classList.add("hidden");
   try {
-    const body = { text: pasted };
-    if (file) {
-      body.filename = file.name;
-      if (file.name.toLowerCase().endsWith(".pdf")) body.file_data = bytesToBase64(await file.arrayBuffer());
-      else body.text = `${pasted}\n${await file.text()}`;
-    }
-    const data = await api("/api/transcript/parse", { method: "POST", body });
-    state.transcriptMatches = data.matches || [];
-    renderTranscriptReview(data);
+    let text = pasted;
+    if (file) text += "\n" + (file.name.toLowerCase().endsWith(".pdf") ? await TX.pdfText(await file.arrayBuffer()) : await file.text());
+    const { rows, unmatched } = TX.parseTranscriptText(text);
+    if (!rows.length) return fail(file?.name.toLowerCase().endsWith(".pdf") && text.trim().length < 40
+      ? "This PDF has no readable text (it may be a scan). Copy the course list from Student Center and paste it instead."
+      : "No course codes were found. Paste the course-history section, with lines like “COMP SCI 300  Programming II  3.00  A”.");
+    const { results } = await api("/api/catalog/resolve", { method: "POST", body: { candidates: rows.map(r => r.guesses) } });
+    state.transcriptMatches = TX.combineMatches(rows, results, TX.currentTerm());
+    state.transcriptUnmatched = unmatched;
+    renderTranscriptReview();
   } catch (error) {
-    feedback.textContent = error.message;
-    feedback.className = "transcript-feedback error";
-    feedback.focus();
+    fail(`Could not read the transcript: ${error.message}`);
   } finally {
     button.disabled = false;
     button.textContent = "Review courses";
   }
 }
 
-function renderTranscriptReview(data) {
-  const rows = $("#transcriptRows");
-  rows.innerHTML = state.transcriptMatches.map(row => `
-    <tr class="${row.include ? "" : "excluded"}">
-      <td><input type="checkbox" data-transcript-code="${esc(row.code)}" ${row.include ? "checked" : ""} aria-label="Import ${esc(row.code)}"></td>
-      <td><strong>${esc(row.code)}</strong><span>${esc(row.title)}</span><small title="${esc(row.evidence)}">${esc(row.note)}</small></td>
+function renderTranscriptReview() {
+  const rows = $("#transcriptRows"), list = state.transcriptMatches;
+  rows.innerHTML = list.map((row, i) => `
+    <tr class="${row.include ? "" : "excluded"} ${row.review ? "needs-review" : ""}">
+      <td><input type="checkbox" data-transcript-row="${i}" ${row.include ? "checked" : ""} aria-label="Import ${esc(row.code)}"></td>
+      <td><strong>${esc(row.code)}</strong><span>${esc(row.title)}</span><small title="${esc(row.evidence)}">${esc(row.note)}${row.attempts > 1 ? ` · taken ${row.attempts} times, latest kept` : ""}</small></td>
+      <td>${esc(row.term || "—")}</td>
+      <td>${esc(row.grade || (row.status === "in-progress" ? "IP" : "—"))}</td>
       <td>${esc(row.credits)}</td>
-      <td><span class="match-status ${row.confidence}">${row.confidence === "matched" ? "Matched" : "Review"}</span></td>
-    </tr>`).join("") || `<tr><td colspan="4">No catalog course codes were found. Try pasting the course-history section.</td></tr>`;
-  $("#transcriptSummary").textContent = `${data.summary.matched} catalog matches · ${data.summary.needs_review} need a closer look`;
+      <td><select data-transcript-status="${i}" aria-label="How ${esc(row.code)} counts">${Object.entries(STATUS_TEXT).map(([v, t]) => `<option value="${v}" ${row.status === v ? "selected" : ""}>${t}</option>`).join("")}</select></td>
+    </tr>`).join("") || `<tr><td colspan="6">No catalog course codes were found. Try pasting the course-history section.</td></tr>`;
+  const counts = { completed: 0, "in-progress": 0, transfer: 0, ap: 0 };
+  list.filter(r => r.include).forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+  const terms = new Set(list.filter(r => r.term).map(r => r.term));
+  const review = list.filter(r => r.review).length;
+  $("#transcriptSummary").textContent = `${list.length} courses across ${terms.size} term${terms.size === 1 ? "" : "s"} · ${counts.completed} completed, ${counts["in-progress"]} in progress, ${counts.transfer + counts.ap} transfer or test credit${review ? ` · ${review} need a look` : ""}`;
   $("#transcriptReview").classList.remove("hidden");
   $("#parseTranscript").classList.add("hidden");
-  $("#importTranscript").classList.toggle("hidden", !state.transcriptMatches.length);
+  $("#importTranscript").classList.toggle("hidden", !list.length);
   updateTranscriptImportCount();
 }
 
 function updateTranscriptImportCount() {
-  const selected = $$("[data-transcript-code]:checked", $("#transcriptRows")).length;
+  $$("[data-transcript-row]", $("#transcriptRows")).forEach(box => { state.transcriptMatches[box.dataset.transcriptRow].include = box.checked; });
+  $$("[data-transcript-status]", $("#transcriptRows")).forEach(sel => { state.transcriptMatches[sel.dataset.transcriptStatus].status = sel.value; });
+  const selected = state.transcriptMatches.filter(r => r.include).length;
   $("#importTranscript").textContent = `Import ${selected} course${selected === 1 ? "" : "s"}`;
   $("#importTranscript").disabled = selected === 0;
 }
 
 function importTranscriptMatches() {
-  const selected = new Set($$("[data-transcript-code]:checked", $("#transcriptRows")).map(input => input.dataset.transcriptCode));
-  let added = 0;
-  state.transcriptMatches.filter(row => selected.has(row.code)).forEach(row => {
-    if (state.settings.prior.some(prior => prior.code === row.code)) return;
-    state.settings.prior.push({ code: row.code, status: row.status, credits: row.credits });
-    state.courseCache.set(row.code, { code: row.code, title: row.title, credits_min: row.credits, credits_max: row.credits });
-    added += 1;
-  });
-  renderPriorChips();
+  updateTranscriptImportCount();
+  const chosen = state.transcriptMatches.filter(r => r.include);
+  const merged = TX.mergePrior(state.settings.prior, chosen);
+  state.settings.prior = merged.prior;
+  chosen.forEach(row => { if (!state.courseCache.has(row.code)) state.courseCache.set(row.code, { code: row.code, title: row.title, credits_min: row.catalogCredits, credits_max: row.catalogCredits }); });
+  // The earliest UW term on the transcript is the first term at UW.
+  const uwTerms = state.settings.prior.filter(p => p.term).map(p => TX.parseTermLabel(p.term)).filter(Boolean).sort((a, b) => TX.termKey(a) - TX.termKey(b));
+  if (uwTerms.length) {
+    const wasIncoming = state.settings.yearInSchool === "incoming";
+    state.settings.startSeason = uwTerms[0].season;
+    state.settings.startYear = uwTerms[0].year;
+    if (wasIncoming || state.settings.gradYear * 3 + SEASONS[state.settings.gradSeason] <= TX.termKey(uwTerms[uwTerms.length - 1])) {
+      // A four-year default from the first UW term; the student can change it.
+      state.settings.gradSeason = "Spring"; state.settings.gradYear = (uwTerms[0].season === "Fall" ? uwTerms[0].year : uwTerms[0].year - 1) + 4;
+    }
+  }
+  const info = standingInfo();
+  if (uwTerms.length) state.settings.yearInSchool = info.projected;
+  renderSetup();
   markDirty();
   if (state.plan) { syncPriorIntoPlan(); validateSoon(); }
+  loadTimeline(true);
   $("#transcriptDialog").close();
-  toast(added ? `Imported ${added} completed course${added === 1 ? "" : "s"}.` : "Those courses were already in prior credit.");
+  const parts = [merged.added && `${merged.added} added`, merged.updated && `${merged.updated} updated`, merged.unchanged && `${merged.unchanged} unchanged`].filter(Boolean).join(", ");
+  const summary = `${parts || "Nothing new"}. ${info.earned} credits earned → ${info.projected}.`;
+  if (state.plan) toast(`${summary} Rebuild the remaining terms?`, { label: "Rebuild", action: generate });
+  else toast(summary);
 }
 
 function renderPriorChips() {
   const box = $("#priorChips");
-  box.innerHTML = state.settings.prior.map((p, i) => `
+  const prior = state.settings.prior;
+  const fromTranscript = prior.filter(p => p.term);
+  const loose = prior.map((p, i) => ({ p, i })).filter(({ p }) => !p.term);
+  box.innerHTML = (fromTranscript.length ? `<div class="prior-summary"><strong>${fromTranscript.length} courses from your transcript</strong><span>${[...new Set(fromTranscript.map(p => p.term))].length} terms · shown on the plan board</span><button type="button" class="text-action compact" data-clear-transcript>Remove</button></div>` : "")
+    + loose.map(({ p, i }) => `
     <span class="chip">${esc(p.code)}
-      <select data-i="${i}" aria-label="Credit type">
-        ${["ap", "transfer", "completed", "in-progress"].map(s => `<option value="${s}" ${p.status === s ? "selected" : ""}>${{ ap: "AP/IB", transfer: "Transfer", completed: "Taken at UW", "in-progress": "In progress" }[s]}</option>`).join("")}
+      <select data-i="${i}" aria-label="Credit type for ${esc(p.code)}">
+        ${Object.entries(STATUS_TEXT).map(([v, t]) => `<option value="${v}" ${p.status === v ? "selected" : ""}>${t}</option>`).join("")}
       </select>
-      <button type="button" data-remove="${i}" aria-label="Remove">×</button></span>`).join("");
-  $$("select[data-i]", box).forEach(sel => sel.addEventListener("change", () => { state.settings.prior[sel.dataset.i].status = sel.value; markDirty(); validateSoon(); }));
+      <button type="button" data-remove="${i}" aria-label="Remove ${esc(p.code)}">×</button></span>`).join("");
+  $$("select[data-i]", box).forEach(sel => sel.addEventListener("change", () => { state.settings.prior[sel.dataset.i].status = sel.value; markDirty(); renderStanding(); validateSoon(); }));
   $$("button[data-remove]", box).forEach(btn => btn.addEventListener("click", () => {
     state.settings.prior.splice(Number(btn.dataset.remove), 1);
-    renderPriorChips(); markDirty();
+    renderPriorChips(); markDirty(); renderStanding();
     if (state.plan) { syncPriorIntoPlan(); validateSoon(); }
   }));
+  $("[data-clear-transcript]", box)?.addEventListener("click", () => {
+    const removed = state.settings.prior.filter(p => p.term);
+    state.settings.prior = state.settings.prior.filter(p => !p.term);
+    renderSetup(); markDirty(); if (state.plan) { renderBoard(); validateSoon(); }
+    toast(`Removed ${removed.length} transcript courses.`, { label: "Undo", action: () => { state.settings.prior.push(...removed); renderSetup(); markDirty(); if (state.plan) { renderBoard(); validateSoon(); } } });
+  });
 }
 
 function syncPriorIntoPlan() {
@@ -421,7 +514,7 @@ function syncPriorIntoPlan() {
 
 // ------------------------------------------------------------------ payload
 function payload(extra = {}) {
-  const s = state.settings;
+  const s = state.settings, w = planWindow();
   const majors = s.majors.filter(m => m.id);
   const variants = {};
   majors.forEach(m => { if (Object.keys(m.variants).length) variants[m.id] = m.variants; });
@@ -430,16 +523,20 @@ function payload(extra = {}) {
   if (s.placeQrA) Object.assign(placements, { qr_a: true, ge_mqr: true });
   const locked = [];
   state.plan?.terms.forEach(t => t.courses.forEach(c => { if (c.locked) locked.push({ code: c.code, term: t.id }); }));
+  // Gen Ed rules follow the first college term; when the plan starts later than that, say so.
+  const startedEarlier = TX.termKey(w.start) > TX.termKey({ season: s.startSeason, year: s.startYear });
+  const firstCollege = s.studentType === "transfer" ? { season: s.firstCollegeSeason, year: s.firstCollegeYear }
+    : startedEarlier ? { season: s.startSeason, year: s.startYear } : null;
   return {
     programs: majors.map(m => m.id), variants,
     studentType: s.studentType,
-    startSeason: s.startSeason, startYear: s.startYear,
+    startSeason: w.start.season, startYear: w.start.year,
     gradSeason: s.gradSeason, gradYear: s.gradYear,
-    firstCollegeSeason: s.studentType === "transfer" ? s.firstCollegeSeason : null,
-    firstCollegeYear: s.studentType === "transfer" ? s.firstCollegeYear : null,
+    firstCollegeSeason: firstCollege?.season || null,
+    firstCollegeYear: firstCollege?.year || null,
     includeSummer: s.includeSummer,
     targetCredits: s.targetCredits, maxCredits: s.maxCredits,
-    prior: s.prior, genericCredits: s.genericCredits,
+    prior: s.prior.filter(p => p.include !== false), genericCredits: Number(s.genericCredits || 0) + w.assumedCredits,
     placements, manualDone: s.manualDone, priority: s.priority, mathPlacement: s.mathPlacement,
     locked, ...extra,
   };
@@ -509,19 +606,21 @@ function renderBoard() {
     if (!group) years.push(group = { start: academicStart, terms: [] });
     group.terms.push({ term, index });
   });
-  const priorCards = state.settings.prior.map(p => ({ code: p.code, title: state.courseCache.get(p.code)?.title || "", credits: p.credits, kind: "prior", status: p.status }));
+  const toCard = p => ({ code: p.code, title: state.courseCache.get(p.code)?.title || "", credits: p.credits, kind: "prior", status: p.status, grade: p.grade });
+  const priorCards = state.settings.prior.filter(p => !p.term && p.include !== false).map(toCard);
   let html = "";
   if (priorCards.length || state.settings.genericCredits) {
     const total = priorCards.reduce((s, c) => s + Number(c.credits || 0), 0) + Number(state.settings.genericCredits || 0);
-    html += `<section class="year"><div class="year-label"><b>Before</b><span>${total} credits</span></div><div class="terms">
-      <div class="term prior"><div class="term-head"><b>${state.settings.studentType === "transfer" ? "Transfer credit" : "AP / prior credit"}</b><span class="term-credits">${total} cr</span></div>
+    html += `<section class="year"><div class="year-label"><b>Before UW</b><span>${total} credits</span></div><div class="terms">
+      <div class="term prior"><div class="term-head"><b>${state.settings.studentType === "transfer" ? "Transfer and test credit" : "AP / test credit"}</b><span class="term-credits">${total} cr</span></div>
       ${priorCards.map(c => cardHtml(c, -2, issues, shared)).join("")}
       ${state.settings.genericCredits ? `<div class="card prior"><div class="code">+${state.settings.genericCredits} credits</div><div class="title">Credit without a UW equivalent</div></div>` : ""}
       </div></div></section>`;
   }
+  html += historyHtml(issues, shared, toCard);
   years.forEach((year, i) => {
     const credits = year.terms.reduce((s, { term }) => s + termCredits(term), 0);
-    html += `<section class="year"><div class="year-label"><b>Year ${i + 1}</b><span>${year.start}–${String(year.start + 1).slice(2)} · ${credits} cr</span></div><div class="terms">`;
+    html += `<section class="year"><div class="year-label"><b>${year.start}–${String(year.start + 1).slice(2)}</b><span>${credits} cr planned</span></div><div class="terms">`;
     year.terms.forEach(({ term, index }) => {
       const load = termCredits(term);
       const notes = termIssues.filter(t => t.term === index);
@@ -550,7 +649,37 @@ function renderBoard() {
   $("#planTitle").textContent = names.join(" + ") || "Your plan";
   $("#compactPlanName").textContent = names.join(" + ") || "Degree plan";
   $("#legend").classList.remove("hidden");
-  $("#planSubtitle").textContent = `${state.settings.startSeason} ${state.settings.startYear} → ${state.settings.gradSeason} ${state.settings.gradYear}. Drag courses between terms; each move is re-checked for prerequisites, offering season and requirements.`;
+  const w = planWindow();
+  $("#planSubtitle").textContent = `${w.current ? `Planning ${TX.termLabel(w.start)}` : `${state.settings.startSeason} ${state.settings.startYear}`} → ${state.settings.gradSeason} ${state.settings.gradYear}. Drag courses between terms; each move is re-checked for prerequisites, the published schedule and requirements.`;
+  renderNextUp();
+}
+
+// Terms already taken (from the transcript), shown read-only above the plan.
+function historyHtml(issues, shared, toCard) {
+  const w = planWindow();
+  const withTerm = state.settings.prior.filter(p => p.term && p.include !== false);
+  if (!withTerm.length) {
+    if (!w.current) return "";
+    return `<section class="year history-note"><div class="year-label"><b>Before ${esc(TX.termLabel(w.start))}</b><span>not on this plan</span></div>
+      <div class="history-empty"><p><strong>Courses you have already taken are not shown.</strong> Import your transcript so completed and in-progress courses count toward requirements and prerequisites.</p><button type="button" class="btn small" data-open-transcript>Import transcript</button></div></section>`;
+  }
+  const byTerm = new Map();
+  withTerm.forEach(p => { if (!byTerm.has(p.term)) byTerm.set(p.term, []); byTerm.get(p.term).push(p); });
+  const terms = [...byTerm.keys()].map(TX.parseTermLabel).filter(Boolean).sort((a, b) => TX.termKey(a) - TX.termKey(b));
+  const years = [];
+  terms.forEach(t => {
+    const start = t.season === "Fall" ? t.year : t.year - 1;
+    let y = years.find(g => g.start === start);
+    if (!y) years.push(y = { start, terms: [] });
+    y.terms.push(t);
+  });
+  const earned = withTerm.filter(p => p.status !== "in-progress").reduce((sum, p) => sum + Number(p.credits || 0), 0);
+  return `<details class="history" ${state.historyOpen ? "open" : ""}><summary><span><b>Already taken</b> · ${withTerm.length} courses, ${earned} credits earned${withTerm.some(p => p.status === "in-progress") ? " + this term in progress" : ""}</span><span class="history-toggle">Show</span></summary>
+    ${years.map(y => `<section class="year past"><div class="year-label"><b>${y.start}–${String(y.start + 1).slice(2)}</b><span>${y.terms.some(t => byTerm.get(TX.termLabel(t)).some(p => p.status === "in-progress")) ? "in progress" : "completed"}</span></div><div class="terms">
+      ${y.terms.map(t => { const list = byTerm.get(TX.termLabel(t)); const cr = list.reduce((s2, p) => s2 + Number(p.credits || 0), 0);
+        const inProgress = list.some(p => p.status === "in-progress");
+        return `<div class="term history-term ${inProgress ? "current" : ""}"><div class="term-head"><b>${esc(TX.termLabel(t))}</b><span class="term-credits">${inProgress ? "in progress · " : ""}${cr} cr</span></div>${list.map(p => cardHtml(toCard(p), -2, issues, shared)).join("")}</div>`; }).join("")}
+    </div></section>`).join("")}</details>`;
 }
 
 // Open elective slots are summarised per term instead of one card per slot.
@@ -974,15 +1103,35 @@ function snapshot() {
   return { id: state.planId, name: names.join(" + ") || "My UW plan", settings: state.settings, terms: state.plan?.terms || [], unscheduled: state.plan?.unscheduled || [], savedAt: new Date().toISOString() };
 }
 
+// Saved plans live in the local database when BadgerPlan runs on your own
+// computer, and in this browser on the public site (meta.public).
+const BROWSER_PLANS = "badgerplan:saved";
+function browserPlans() {
+  try { return JSON.parse(localStorage.getItem(BROWSER_PLANS) || "[]"); } catch { return []; }
+}
+function writeBrowserPlans(list) {
+  try { localStorage.setItem(BROWSER_PLANS, JSON.stringify(list)); return true; } catch { return false; }
+}
+
 async function savePlan() {
   if (!state.plan) return toast("Build a plan before saving.");
   try {
-    const result = await api("/api/plans", { method: "POST", body: snapshot() });
-    state.planId = result.id;
+    if (state.meta?.public) {
+      const plans = browserPlans();
+      const data = snapshot();
+      data.id = state.planId || `p${Date.now().toString(36)}`;
+      const i = plans.findIndex(p => p.id === data.id);
+      if (i >= 0) plans[i] = data; else plans.unshift(data);
+      if (!writeBrowserPlans(plans.slice(0, 20))) throw new Error("This browser is not allowing storage. Use Export to keep a copy.");
+      state.planId = data.id;
+    } else {
+      const result = await api("/api/plans", { method: "POST", body: snapshot() });
+      state.planId = result.id;
+    }
     state.dirty = false;
     $("#saveStatus").textContent = "Saved";
     saveLocal();
-    toast("Plan saved to your local database.");
+    toast(state.meta?.public ? "Plan saved in this browser. Use Export to move it to another device." : "Plan saved to your local database.");
   } catch (error) { toast(error.message); }
 }
 
@@ -991,10 +1140,13 @@ async function openPlans() {
   const list = $("#plansList");
   list.innerHTML = `<p class="subtle">Loading…</p>`;
   dialog.showModal();
-  const plans = await api("/api/plans").catch(() => []);
-  list.innerHTML = plans.map(p => `<button type="button" class="result" data-plan="${esc(p.id)}"><div><b>${esc(p.name)}</b><small>Saved ${new Date(p.updated_at).toLocaleString()}</small></div><div class="right">Open</div></button>`).join("") || `<p class="subtle">No saved plans yet.</p>`;
+  const plans = state.meta?.public ? browserPlans().map(p => ({ id: p.id, name: p.name, updated_at: p.savedAt }))
+    : await api("/api/plans").catch(() => []);
+  list.innerHTML = plans.map(p => `<button type="button" class="result" data-plan="${esc(p.id)}"><div><b>${esc(p.name)}</b><small>Saved ${new Date(p.updated_at).toLocaleString()}</small></div><div class="right">Open</div></button>`).join("")
+    || `<p class="subtle">No saved plans yet.${state.meta?.public ? " Plans you save here stay in this browser." : ""}</p>`;
   $$("[data-plan]", list).forEach(btn => btn.addEventListener("click", async () => {
-    loadSnapshot(await api(`/api/plans/${enc(btn.dataset.plan)}`));
+    const data = state.meta?.public ? browserPlans().find(p => p.id === btn.dataset.plan) : await api(`/api/plans/${enc(btn.dataset.plan)}`);
+    if (data) loadSnapshot(data);
     dialog.close();
   }));
 }
@@ -1044,6 +1196,12 @@ function restoreLocal() {
     const data = JSON.parse(raw);
     state.settings = { ...defaultSettings(), ...(data.settings || {}) };
     state.settings.majors = (state.settings.majors || []).filter(m => !m.id || state.programs.some(p => p.id === m.id));
+    if (!data.settings?.yearInSchool) {
+      // Plans saved before "Where are you now?" existed: infer it from the first term.
+      const now = TX.currentTerm(), s = state.settings;
+      const years = (now.season === "Fall" ? now.year : now.year - 1) - s.startYear;
+      s.yearInSchool = TX.termKey({ season: s.startSeason, year: s.startYear }) > TX.termKey(now) ? "incoming" : STANDINGS[Math.max(0, Math.min(3, years))];
+    }
     if (data.terms?.length) state.plan = { terms: data.terms, unscheduled: data.unscheduled || [] };
     state.planId = data.id || null;
     $("#saveStatus").textContent = data.id ? "Restored" : "Restored draft";
@@ -1091,6 +1249,7 @@ async function init() {
   if (!state.settings.majors.length) addMajorRow();
   renderRoute();
   renderHome();
+  $("#datesIcs").addEventListener("click", downloadDatesIcs);
 }
 
 function bindRouter() {
@@ -1118,6 +1277,8 @@ function renderRoute() {
   if (path === "/plan") { view = "plan"; area = "plan"; }
   else if (path === "/plan/requirements") { view = "audit"; area = "plan"; renderAudit(); }
   else if (path === "/plan/double-major") { view = "double"; area = "plan"; renderDouble(); }
+  else if (path === "/plan/schedule") { view = "schedule"; area = "plan"; renderSchedule(); }
+  else if (path === "/plan/dates") { view = "dates"; area = "plan"; renderDates(); }
   else if (path === "/explore/professors") { view = "professors"; area = "explore"; runProfessorSearch(); }
   else if (path === "/explore/majors") { view = "majors"; area = "explore"; }
   else if (path.startsWith("/courses/")) { view = "course"; area = "explore"; renderCoursePage(decodeURIComponent(path.slice(9))); }
@@ -1138,11 +1299,11 @@ function renderRoute() {
 }
 
 function routeTitle(view) {
-  return ({ home: "UW academic planning", plan: "Degree plan", audit: "Requirements", double: "Double major", explore: "Explore courses", professors: "Professors", majors: "Majors", course: "Course", professor: "Professor", major: "Major" })[view] || "BadgerPlan";
+  return ({ home: "UW academic planning", plan: "Degree plan", audit: "Requirements", double: "Double major", schedule: "Next term schedule", dates: "Key dates", explore: "Explore courses", professors: "Professors", majors: "Majors", course: "Course", professor: "Professor", major: "Major" })[view] || "BadgerPlan";
 }
 
 function showView(view) {
-  const routes = { plan: "/plan", audit: "/plan/requirements", double: "/plan/double-major", explore: "/explore/courses", programs: "/explore/majors", home: "/" };
+  const routes = { plan: "/plan", audit: "/plan/requirements", double: "/plan/double-major", schedule: "/plan/schedule", dates: "/plan/dates", explore: "/explore/courses", programs: "/explore/majors", home: "/" };
   navigate(routes[view] || "/");
 }
 
@@ -1208,6 +1369,7 @@ function renderHome() {
     renderSources();
   }
   initCampusMap();
+  loadTimeline().then(renderHomeDates);
   if (!state.plan) return;
   const names = state.settings.majors.filter(m => m.id).map(m => state.programs.find(p => p.id === m.id)?.name).filter(Boolean);
   const creditsPlanned = state.validation?.audit?.credits?.planned ?? state.plan.terms.reduce((sum, term) => sum + termCredits(term), 0);
@@ -1672,7 +1834,9 @@ function cardHtml(c, termIndex, issues, shared) {
   if (isShared) badges.push(`<span class="badge shared">Both majors</span>`);
   if (gpa) badges.push(`<span class="badge gpa" title="Madgrades average GPA">GPA ${Number(gpa).toFixed(2)}</span>`);
   if (c.locked) badges.push(`<span class="badge lock" title="Pinned to this term">Pinned</span>`);
-  if (c.kind === "prior") badges.push(`<span class="badge">${{ ap: "AP/IB", transfer: "Transfer", completed: "Taken", "in-progress": "In progress" }[c.status] || "Earned"}</span>`);
+  if (c.kind === "prior") badges.push(`<span class="badge ${c.status === "in-progress" ? "in-progress" : ""}">${c.status === "completed" && c.grade ? `Grade ${esc(c.grade)}` : { ap: "AP/IB", transfer: "Transfer", completed: "Taken", "in-progress": "In progress" }[c.status] || "Earned"}</span>`);
+  const offered = termIndex >= 0 ? state.validation?.offerings?.[c.code] : null;
+  if (offered?.offered) badges.push(`<span class="badge confirmed" title="On the published ${esc(state.plan?.terms[termIndex]?.label || "")} schedule in Course Search & Enroll">On schedule</span>`);
   const issue = errorIssue || warnIssue, draggable = c.kind !== "prior";
   const location = termIndex >= 0 ? state.plan?.terms[termIndex]?.label : "not scheduled";
   return `<article class="card ${kind || ""} ${errorIssue ? "has-error" : ""} ${!errorIssue && warnIssue ? "has-warning" : ""}" ${draggable ? `draggable="true"` : ""} data-code="${esc(c.code)}" data-term="${termIndex}" tabindex="0"><div class="code">${c.placeholder ? "Elective" : esc(c.code)}</div><div class="title">${c.placeholder ? "Any course · choose a specific option" : esc(c.title || "")}</div><div class="meta">${badges.join("")}</div>${issue ? `<div class="issue ${issue.level}">${esc(issue.message)}</div>` : ""}${draggable ? `<button type="button" class="menu-btn" aria-label="Move, pin or remove ${esc(c.placeholder ? "elective" : c.code)} (${esc(location)})" aria-haspopup="menu">•••</button>` : ""}</article>`;
@@ -1699,6 +1863,9 @@ function bindBoard() {
   });
   $$('[data-add-term]').forEach(btn => btn.addEventListener("click", () => openAddDialog(Number(btn.dataset.addTerm))));
   $$('[data-elective-term]').forEach(btn => btn.addEventListener("click", () => openAddDialog(Number(btn.dataset.electiveTerm), btn.dataset.electiveCode)));
+  $("#board details.history")?.addEventListener("toggle", e => { state.historyOpen = e.target.open; });
+  $("#board [data-open-transcript]")?.addEventListener("click", () => openTranscriptDialog());
+  bindTouchDrag();
 }
 
 let removalUndo = null;
@@ -1738,4 +1905,285 @@ function toast(message, options = {}) {
   $("#toastMessage").textContent = message;
   action.classList.toggle("hidden", !options.action); action.textContent = options.label || ""; action.onclick = options.action || null;
   el.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), options.action ? 6000 : 3000);
+}
+
+// ------------------------------------------------------------------ key dates
+// Enrollment appointment windows (Registrar) and add/drop deadlines (Enroll),
+// personalised by the standing the student will have when they enroll.
+let timelineCache = null, timelineKey = "";
+function enrollingStanding() {
+  const s = state.settings;
+  if (s.yearInSchool === "incoming") return null;
+  const info = standingInfo();
+  return info.fromTranscript ? info.projected : s.yearInSchool;
+}
+async function loadTimeline(force = false) {
+  const standing = enrollingStanding() || "";
+  if (!force && timelineCache && timelineKey === standing) return timelineCache;
+  try {
+    timelineCache = await api(`/api/timeline?standing=${enc(standing)}`);
+    timelineKey = standing;
+  } catch { timelineCache = { events: [], sources: {} }; }
+  if (document.body.dataset.view === "dates") renderDates();
+  renderNextUp();
+  renderHomeDates();
+  return timelineCache;
+}
+function daysUntil(iso) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.round((new Date(`${iso}T00:00:00`) - today) / 86400000);
+}
+function whenText(e) {
+  const d = daysUntil(e.date), end = e.end ? daysUntil(e.end) : d;
+  if (d <= 0 && end >= 0) return e.end ? "now open" : "today";
+  if (d === 1) return "tomorrow";
+  return d < 0 ? "passed" : `in ${d} days`;
+}
+function fmtDate(iso, opts = { month: "short", day: "numeric" }) {
+  return new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, opts);
+}
+function relevantEvents(events) {
+  return (events || []).filter(e => e.mine || e.kind !== "enroll");
+}
+function renderNextUp() {
+  const box = $("#nextUp");
+  if (!box || !timelineCache) return;
+  const next = relevantEvents(timelineCache.events).slice(0, 3);
+  box.classList.toggle("hidden", !next.length || !state.plan);
+  box.innerHTML = `<span class="next-up-label">Next dates</span>${next.map(e => `<span class="next-up-item k-${e.kind}"><b>${fmtDate(e.date)}${e.end ? `–${fmtDate(e.end, { day: "numeric" })}` : ""}</b> ${esc(e.title.replace(/^.*?: /, ""))} <small>${whenText(e)}${e.estimate ? " · estimate" : ""}</small></span>`).join("")}<a href="/plan/dates" data-route>All dates</a>`;
+}
+function renderHomeDates() {
+  const box = $("#homeDates");
+  if (!box || !timelineCache) return;
+  const next = relevantEvents(timelineCache.events).slice(0, 3);
+  box.classList.toggle("hidden", !next.length);
+  $("#homeDatesList").innerHTML = next.map(e => `<li class="k-${e.kind}"><time datetime="${e.date}"><b>${fmtDate(e.date, { day: "numeric" })}</b><span>${fmtDate(e.date, { month: "short" })}</span></time><span><strong>${esc(e.title)}</strong><small>${whenText(e)}${e.estimate ? " · estimated" : ""}</small></span></li>`).join("");
+}
+async function renderDates() {
+  const body = $("#datesBody");
+  const data = await loadTimeline();
+  const standing = enrollingStanding();
+  $("#datesSub").textContent = standing
+    ? `Personalised for ${standing.toLowerCase()} standing. Your exact enrollment time is in Student Center.`
+    : "New students enroll at SOAR; once you have a UW transcript, choose your year in Plan settings to see your enrollment window.";
+  const events = data.events || [];
+  if (!events.length) { body.innerHTML = `<div class="empty-state inline"><h2>No upcoming dates saved</h2><p>Run <code>python scripts/fetch_enroll.py</code> to load the latest terms from Course Search &amp; Enroll.</p></div>`; return; }
+  const months = new Map();
+  events.forEach(e => { const key = e.date.slice(0, 7); if (!months.has(key)) months.set(key, []); months.get(key).push(e); });
+  body.innerHTML = `<ol class="date-list">${[...months.entries()].map(([key, list]) => `<li class="date-month"><h2>${fmtDate(`${key}-01`, { month: "long", year: "numeric" })}</h2><ol>${list.map(e => `
+    <li class="date-item k-${e.kind} ${e.mine ? "mine" : "other"} ${e.estimate ? "estimate" : ""}">
+      <time datetime="${e.date}"><b>${fmtDate(e.date, { day: "numeric" })}${e.end ? `–${fmtDate(e.end, { day: "numeric" })}` : ""}</b><span>${fmtDate(e.date, { weekday: "short" })}</span></time>
+      <div><strong>${esc(e.title)}</strong>${e.mine && e.kind === "enroll" && standing ? ` <span class="badge confirmed">Your group</span>` : ""}${e.estimate ? ` <span class="badge">Estimate</span>` : ""}
+        ${e.detail ? `<p>${esc(e.detail)}</p>` : ""}
+        ${e.source ? `<a class="source-link" href="${esc(e.source.url)}" target="_blank" rel="noopener">${esc(e.source.name)}</a>` : ""}</div>
+      <span class="countdown">${whenText(e)}</span>
+    </li>`).join("")}</ol></li>`).join("")}</ol>
+    <p class="source-note">Add and drop dates shown are for regular 15-week courses. Courses in shorter sessions have their own deadlines, which the Next term schedule shows for each section.</p>`;
+}
+function downloadDatesIcs() {
+  const events = relevantEvents(timelineCache?.events).filter(e => e.mine);
+  if (!events.length) return toast("No upcoming dates to export yet.");
+  downloadFile("badgerplan-dates.ics", SCH.deadlinesIcs(events), "text/calendar");
+  toast(`Saved ${events.length} dates to badgerplan-dates.ics.`);
+}
+function downloadFile(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ------------------------------------------------------------------ next-term schedule
+const schedule = { termCode: null, courses: [], prefs: { openOnly: true, noBefore: null, freeDays: [], compact: false }, options: [], active: 0, picks: null, sections: null };
+function termCodeOf(t) {
+  const ay = t.season === "Fall" ? t.year + 1 : t.year;
+  return `1${String(ay % 100).padStart(2, "0")}${{ Fall: 2, Spring: 4, Summer: 6 }[t.season]}`;
+}
+async function renderSchedule() {
+  const body = $("#scheduleBody");
+  if (!state.plan) { body.innerHTML = `<div class="empty-state inline"><h2>No plan yet</h2><p>Build a plan first; its next term becomes your timetable here.</p><a class="btn primary" href="/plan" data-route>Go to plan</a></div>`; return; }
+  const index = state.plan.terms.findIndex(t => t.season !== "Summer");
+  const term = state.plan.terms[index];
+  if (!term) { body.innerHTML = `<p class="subtle">Your plan has no upcoming fall or spring term.</p>`; return; }
+  const code = termCodeOf(term);
+  const courses = term.courses.filter(c => !c.placeholder);
+  const electives = term.courses.filter(c => c.placeholder);
+  $("#scheduleTitle").textContent = `${term.label} schedule`;
+  body.innerHTML = `<p class="subtle">Loading sections for ${courses.length} courses from Course Search &amp; Enroll…</p>`;
+  const sections = {};
+  let regular = null;
+  try {
+    for (let i = 0; i < courses.length; i += 12) {
+      const batch = courses.slice(i, i + 12).map(c => c.code);
+      const data = await api(`/api/terms/${code}/sections?codes=${enc(batch.join(","))}`);
+      regular = data.regular_session || regular;
+      Object.assign(sections, data.courses);
+    }
+  } catch (error) { body.innerHTML = `<p>${esc(error.message)}</p>`; return; }
+  schedule.termCode = code;
+  schedule.term = { ...term, regular };
+  schedule.sections = sections;
+  schedule.courses = courses.map(c => ({ code: c.code, title: c.title, credits: c.credits, offered: sections[c.code]?.offered, packages: sections[c.code]?.packages || null, source: sections[c.code]?.source, sample: sections[c.code]?.sample }));
+  schedule.electives = electives;
+  schedule.index = index;
+  runSchedule();
+}
+function runSchedule() {
+  const usable = schedule.courses.filter(c => c.offered !== false);
+  const result = SCH.buildSchedules(usable.map(c => ({ code: c.code, packages: c.packages || [] })), { ...schedule.prefs, max: 6 });
+  schedule.result = result;
+  schedule.active = 0;
+  schedule.picks = result.options[0]?.picks.map(p => ({ ...p })) || null;
+  paintSchedule();
+}
+function paintSchedule() {
+  const body = $("#scheduleBody"), t = schedule.term, r = schedule.result, p = schedule.prefs;
+  const notOffered = schedule.courses.filter(c => c.offered === false);
+  const noData = schedule.courses.filter(c => c.offered !== false && !c.packages?.length);
+  const credits = schedule.courses.reduce((sum, c) => sum + Number(c.credits || 0), 0);
+  const prefsHtml = `<form class="schedule-prefs" id="schedulePrefs">
+    <label class="check"><input type="checkbox" name="openOnly" ${p.openOnly ? "checked" : ""}> Open seats only</label>
+    <label>No classes before<select name="noBefore"><option value="">Any time</option>${[480, 540, 570, 600].map(v => `<option value="${v}" ${p.noBefore === v ? "selected" : ""}>${SCH.fmtTime(v)}</option>`).join("")}</select></label>
+    <fieldset class="day-picks"><legend>Keep free</legend>${["M", "T", "W", "R", "F"].map(d => `<label><input type="checkbox" name="free" value="${d}" ${p.freeDays.includes(d) ? "checked" : ""}> ${SCH.DAY_NAMES[d]}</label>`).join("")}</fieldset>
+    <label class="check"><input type="checkbox" name="compact" ${p.compact ? "checked" : ""}> Fewer days on campus</label></form>`;
+  const notes = [
+    ...notOffered.map(c => `<div class="constraint-item error"><span class="constraint-level">NOT OFFERED</span><div><strong>${esc(c.code)}</strong><div>Not on the published ${esc(t.label)} schedule. Move it to another term on the plan board.</div></div><a class="btn small" href="/plan" data-route>Open plan</a></div>`),
+    ...noData.map(c => `<div class="constraint-item assumption"><span class="constraint-level">NO SECTIONS</span><div><strong>${esc(c.code)}</strong><div>Section times are not loaded. BadgerPlan fetches them from Course Search &amp; Enroll when it is online; you can also run <code>python scripts/fetch_enroll.py --term ${schedule.termCode}</code>.</div></div></div>`),
+    ...(r.blocked || []).map(b => `<div class="constraint-item error"><span class="constraint-level">CONFLICT</span><div><strong>${esc(b.codes.join(" and "))}</strong><div>${esc(b.reason)}.</div></div></div>`),
+  ].join("");
+  const electiveNote = schedule.electives.length ? `<p class="hint">${schedule.electives.length} open elective slot${schedule.electives.length === 1 ? "" : "s"} on the plan for this term are not scheduled; pick specific courses on the plan board to include them.</p>` : "";
+  const deadlines = t.regular ? `<p class="source-note">Regular-session deadlines for ${esc(t.label)}: add by <b>${fmtDate(t.regular.add)}</b>, drop without a DR by <b>${fmtDate(t.regular.drop_no_dr)}</b>, drop by <b>${fmtDate(t.regular.drop)}</b>.</p>` : "";
+  let main = "";
+  if (schedule.picks) {
+    const o = r.options[schedule.active];
+    const scheduled = schedule.picks.reduce((sum, p) => sum + Number(schedule.courses.find(c => c.code === p.code)?.credits || 0), 0);
+    main = `<div class="schedule-options" role="tablist" aria-label="Timetable options">${r.options.map((_, i) => `<button type="button" role="tab" class="${i === schedule.active ? "active" : ""}" aria-selected="${i === schedule.active}" data-option="${i}">${i + 1}</button>`).join("")}<span>Option ${schedule.active + 1} of ${r.options.length} · ${scheduled}${scheduled !== credits ? ` of ${credits}` : ""} credits · ${o.stats.days.map(d => SCH.DAY_NAMES[d]).join(" ")} · ${SCH.fmtTime(o.stats.earliest)}–${SCH.fmtTime(o.stats.latest)}</span>
+      <span class="schedule-actions"><button type="button" class="text-action compact" id="copyClassNumbers">Copy class numbers</button><button type="button" class="text-action compact" id="scheduleIcs">Add to calendar (.ics)</button></span></div>
+      ${weekGrid(schedule.picks)}
+      <ol class="section-list">${schedule.picks.map(pick => sectionRow(pick)).join("")}</ol>`;
+  } else if (!r.blocked?.length && !noData.length) {
+    main = `<p class="subtle">No courses to schedule.</p>`;
+  }
+  const sample = schedule.courses.some(c => c.sample);
+  body.innerHTML = prefsHtml + (notes ? `<div class="constraint-center">${notes}</div>` : "") + electiveNote + main + deadlines
+    + `<p class="source-note">Sections, times, rooms and seats: Course Search &amp; Enroll${sample ? " (saved sample; seats change quickly, confirm before enrolling)" : ""}. Final exam times are included in the calendar file.</p>`;
+  bindSchedule();
+}
+const GRID_START = 480, GRID_END = 1260;
+function weekGrid(picks) {
+  const colors = ["c1", "c2", "c3", "c4", "c5", "c6", "c7"];
+  const blocks = [];
+  picks.forEach((p, k) => (p.pkg.meetings || []).forEach(m => SCH.meetingDays(m.days).forEach(d => blocks.push({ d, m, p, k }))));
+  const earliest = Math.min(GRID_START, ...blocks.map(b => b.m.start)), latest = Math.max(1080, ...blocks.map(b => b.m.end));
+  const top = Math.floor(earliest / 60) * 60, bottom = Math.ceil(latest / 60) * 60, span = bottom - top;
+  const hours = [];
+  for (let h = top; h < bottom; h += 60) hours.push(h);
+  const days = ["M", "T", "W", "R", "F"];
+  return `<div class="week-grid" style="--rows:${span / 15}">
+    <div class="wg-times">${hours.map(h => `<span style="top:${((h - top) / span) * 100}%">${SCH.fmtTime(h)}</span>`).join("")}</div>
+    ${days.map(d => `<div class="wg-day"><b>${SCH.DAY_NAMES[d]}</b><div class="wg-col">${hours.map(h => `<i style="top:${((h - top) / span) * 100}%"></i>`).join("")}
+      ${blocks.filter(b => b.d === d).map(b => `<div class="wg-block ${colors[b.k % colors.length]}" style="top:${((b.m.start - top) / span) * 100}%;height:${((b.m.end - b.m.start) / span) * 100}%"><strong>${esc(b.p.code)}</strong><span>${SCH.fmtTime(b.m.start)}–${SCH.fmtTime(b.m.end)}</span><span>${esc([b.m.building, b.m.room].filter(Boolean).join(" "))}</span></div>`).join("")}
+    </div></div>`).join("")}</div>`;
+}
+function sectionRow(pick) {
+  const course = schedule.courses.find(c => c.code === pick.code);
+  const pkg = pick.pkg;
+  const alternatives = SCH.compatiblePackages(course, schedule.picks, schedule.prefs);
+  const status = pkg.status === "OPEN" ? `<span class="seat open">Open · ${pkg.seats ?? "?"} seats</span>` : pkg.status === "WAITLISTED" ? `<span class="seat wait">Waitlist · ${pkg.waitlist ?? 0}</span>` : `<span class="seat full">Full</span>`;
+  const session = pkg.session && pkg.session !== "A1" ? `<small class="hint">Session ${esc(pkg.session)} has its own add/drop dates; check this section in Enroll.</small>` : "";
+  return `<li class="section-row"><div><strong>${esc(pick.code)}</strong> <span class="subtle">${esc(course.title || "")} · ${esc(course.credits)} cr</span>
+      ${pkg.sections.map(sec => `<div class="sec-line"><b>${esc(sec.type)} ${esc(sec.number)}</b> #${esc(sec.classNumber)} ${pkg.meetings.length ? "" : ""}${sec.instructors.length ? `· ${esc(sec.instructors.join(", "))}` : ""}</div>`).join("")}
+      <div class="sec-line">${pkg.meetings.map(m => `${esc(m.days)} ${SCH.fmtTime(m.start)}–${SCH.fmtTime(m.end)} · ${esc([m.building, m.room].filter(Boolean).join(" ") || "TBA")}`).join("<br>") || "No set meeting time"}</div>${session}</div>
+    <div class="sec-side">${status}${alternatives.length > 1 ? `<label class="swap">Swap section<select data-swap="${esc(pick.code)}">${alternatives.map(a => `<option value="${a.classNumber}" ${a.classNumber === pkg.classNumber ? "selected" : ""}>${esc(a.sections.map(x => `${x.type} ${x.number}`).join(" + "))} · ${esc(a.meetings.map(m => `${m.days} ${SCH.fmtTime(m.start)}`).join(", "))}</option>`).join("")}</select></label>` : ""}</div></li>`;
+}
+function bindSchedule() {
+  const form = $("#schedulePrefs");
+  form?.addEventListener("change", () => {
+    const data = new FormData(form);
+    schedule.prefs = { openOnly: data.has("openOnly"), noBefore: data.get("noBefore") ? Number(data.get("noBefore")) : null, freeDays: data.getAll("free"), compact: data.has("compact") };
+    runSchedule();
+  });
+  $$("[data-option]").forEach(b => b.addEventListener("click", () => {
+    schedule.active = Number(b.dataset.option);
+    schedule.picks = schedule.result.options[schedule.active].picks.map(p => ({ ...p }));
+    paintSchedule();
+  }));
+  $$("[data-swap]").forEach(sel => sel.addEventListener("change", () => {
+    const course = schedule.courses.find(c => c.code === sel.dataset.swap);
+    const pkg = course.packages.find(p => String(p.classNumber) === sel.value);
+    schedule.picks = schedule.picks.map(p => (p.code === course.code ? { ...p, pkg } : p));
+    paintSchedule();
+  }));
+  $("#copyClassNumbers")?.addEventListener("click", async () => {
+    const text = schedule.picks.map(p => `${p.code}: ${p.pkg.classNumber}`).join("\n");
+    try { await navigator.clipboard.writeText(text); toast("Class numbers copied. Paste them into your cart in Course Search & Enroll."); }
+    catch { toast(text.replace(/\n/g, " · ")); }
+  });
+  $("#scheduleIcs")?.addEventListener("click", () => {
+    const t = schedule.term;
+    const term = { name: t.label, classes_begin: t.regular?.begin, classes_end: t.regular?.end };
+    if (!term.classes_begin) return toast("Term dates are not loaded yet.");
+    const picks = schedule.picks.map(p => ({ ...p, title: schedule.courses.find(c => c.code === p.code)?.title }));
+    const dates = relevantEvents(timelineCache?.events).filter(e => e.term === schedule.termCode && e.kind === "deadline");
+    downloadFile(`badgerplan-${t.label.replace(/\s+/g, "-").toLowerCase()}.ics`, SCH.scheduleIcs(picks, term, dates), "text/calendar");
+  });
+}
+
+// ------------------------------------------------------------------ touch drag
+// HTML drag and drop does not fire on phones; a long press picks a card up instead.
+const touchDrag = { active: false };
+// Registered once, before any touch starts: Chrome only lets a touchmove listener
+// block scrolling if it existed when the touch began.
+document.addEventListener("touchmove", e => { if (touchDrag.active) e.preventDefault(); }, { passive: false });
+function bindTouchDrag() {
+  $$(".card[draggable]").forEach(card => {
+    if (card.dataset.touchBound) return;
+    card.dataset.touchBound = "1";
+    card.addEventListener("pointerdown", e => {
+      if (e.pointerType === "mouse" || e.target.closest("button")) return;
+      const startX = e.clientX, startY = e.clientY;
+      let ghost = null, over = null;
+      const timer = setTimeout(() => {
+        touchDrag.active = true;
+        ghost = card.cloneNode(true);
+        ghost.classList.add("drag-ghost");
+        ghost.style.width = `${card.offsetWidth}px`;
+        document.body.appendChild(ghost);
+        card.classList.add("dragging");
+        navigator.vibrate?.(12);
+        place(startX, startY);
+      }, 380);
+      const place = (x, y) => {
+        if (!ghost) return;
+        ghost.style.transform = `translate(${x - ghost.offsetWidth / 2}px, ${y - 24}px)`;
+        ghost.hidden = true;
+        const zone = document.elementFromPoint(x, y)?.closest(".term[data-term-index], #trayCourses");
+        ghost.hidden = false;
+        if (zone !== over) { over?.classList.remove("drag-over"); over = zone; over?.classList.add("drag-over"); }
+        if (y < 80) window.scrollBy(0, -12); else if (y > innerHeight - 80) window.scrollBy(0, 12);
+      };
+      const move = ev => {
+        if (!ghost) { if (Math.hypot(ev.clientX - startX, ev.clientY - startY) > 10) cleanup(); return; }
+        ev.preventDefault();
+        place(ev.clientX, ev.clientY);
+      };
+      const up = () => {
+        if (ghost && over) moveCourse(card.dataset.code, Number(card.dataset.term), Number(over.dataset.termIndex));
+        cleanup();
+      };
+      const cleanup = () => {
+        clearTimeout(timer);
+        touchDrag.active = false;
+        ghost?.remove(); card.classList.remove("dragging"); over?.classList.remove("drag-over");
+        document.removeEventListener("pointermove", move);
+        document.removeEventListener("pointerup", up);
+        document.removeEventListener("pointercancel", cleanup);
+      };
+      document.addEventListener("pointermove", move, { passive: false });
+      document.addEventListener("pointerup", up);
+      document.addEventListener("pointercancel", cleanup);
+    });
+    card.addEventListener("contextmenu", e => { if (card.classList.contains("dragging")) e.preventDefault(); });
+  });
 }

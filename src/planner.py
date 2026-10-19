@@ -143,8 +143,12 @@ class PlanRequest:
 class PlanContext:
     """Catalog view shared by the generator and the validator."""
 
-    def __init__(self, catalog: dict[str, dict], programs: list[dict], request: PlanRequest, aliases: dict[str, str] | None = None):
+    def __init__(self, catalog: dict[str, dict], programs: list[dict], request: PlanRequest, aliases: dict[str, str] | None = None,
+                 offerings=None):
         self.catalog = dict(catalog)
+        # offerings(season, year, code) -> True/False when a term's published schedule
+        # is known (Course Search & Enroll), None when only history is available.
+        self.offerings = offerings or (lambda season, year, code: None)
         self.programs = programs
         self.request = request
         self.aliases = aliases or {}
@@ -649,6 +653,9 @@ def schedule(ctx: PlanContext, entries: dict[str, dict], reasons: dict[str, list
         cap = ctx.request.max_credits if term.season != "Summer" else min(ctx.request.max_credits, 8)
         target = ctx.request.target_credits if term.season != "Summer" else 6
         def offered_now(code: str) -> bool:
+            confirmed = ctx.offerings(term.season, term.year, code)
+            if confirmed is not None:
+                return confirmed
             seasons = (ctx.catalog.get(code) or {}).get("seasons") or []
             if seasons and term.season not in seasons:
                 return False
@@ -772,8 +779,9 @@ def _course_card(code: str, ctx: PlanContext, entries: dict[str, dict], reasons:
 
 # ----------------------------------------------------------------------------- API
 
-def generate_plan(catalog: dict[str, dict], programs: list[dict], request: PlanRequest, aliases: dict[str, str] | None = None) -> dict:
-    ctx = PlanContext(catalog, programs, request, aliases)
+def generate_plan(catalog: dict[str, dict], programs: list[dict], request: PlanRequest, aliases: dict[str, str] | None = None,
+                  offerings=None) -> dict:
+    ctx = PlanContext(catalog, programs, request, aliases, offerings)
     entries: dict[str, dict] = {}
     reasons: dict[str, list[str]] = {}
     for item in request.prior:
@@ -800,16 +808,17 @@ def generate_plan(catalog: dict[str, dict], programs: list[dict], request: PlanR
     unscheduled = [w.split(":", 1)[1] for w in warnings if w.startswith("__unscheduled__:")]
     warnings = [w for w in warnings if not w.startswith("__unscheduled__:")]
     plan = {"terms": terms, "unscheduled": [_course_card(c, ctx, entries, reasons) for c in unscheduled]}
-    validation = validate_plan(catalog, programs, request, plan, aliases)
+    validation = validate_plan(catalog, programs, request, plan, aliases, offerings)
     validation["warnings"] = warnings + validation["warnings"]
     return {**plan, **validation}
 
 
 def validate_plan(catalog: dict[str, dict], programs: list[dict], request: PlanRequest, plan: dict,
-                  aliases: dict[str, str] | None = None) -> dict:
+                  aliases: dict[str, str] | None = None, offerings=None) -> dict:
     """Check a (possibly user-edited) plan and return issues + a full audit."""
 
-    ctx = PlanContext(catalog, programs, request, aliases)
+    ctx = PlanContext(catalog, programs, request, aliases, offerings)
+    confirmed: dict[str, dict] = {}
     placeholder_catalog = {}
     entries: dict[str, dict] = {}
     term_of: dict[str, int] = {}
@@ -866,11 +875,18 @@ def validate_plan(catalog: dict[str, dict], programs: list[dict], request: PlanR
             missing = _missing_description(tree, before | (same if info.get("concurrent") else set()), earned, ctx.placement_ok)
             issues.setdefault(code, []).append({"level": "error", "message": f"Requisites not met: {missing}"})
         season = term_list[index].season if index < len(term_list) else None
+        year = term_list[index].year if index < len(term_list) else None
         seasons = info.get("seasons") or []
-        if season and seasons and season not in seasons:
+        published = ctx.offerings(season, year, code) if season else None
+        if published is not None:
+            confirmed[code] = {"term": index, "offered": published}
+            if not published:
+                issues.setdefault(code, []).append({"level": "error",
+                                                    "message": f"Not on the published {season} {year} schedule"})
+        elif season and seasons and season not in seasons:
             issues.setdefault(code, []).append({"level": "warning",
                                                 "message": f"Usually offered {'/'.join(seasons)}, not {season}"})
-        if not seasons:
+        if not seasons and published is None:
             issues.setdefault(code, []).append({"level": "info", "message": "No recent offering history — confirm in Course Search & Enroll"})
         if not ctx.is_active(code):
             issues.setdefault(code, []).append({"level": "warning", "message": f"Last taught {info.get('last_taught')}"})
@@ -894,6 +910,7 @@ def validate_plan(catalog: dict[str, dict], programs: list[dict], request: PlanR
         "issues": issues,
         "termIssues": term_issues,
         "termCredits": term_loads,
+        "offerings": confirmed,
         "audit": audit,
         "warnings": [],
         "rules": {"degree": [r["id"] for r in ctx.degree_rules], "gened": "Core GenEd" if ctx.gened_rules and ctx.gened_rules[0]["id"].startswith("ge_") else "Legacy Gen Ed"},

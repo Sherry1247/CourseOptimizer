@@ -91,3 +91,31 @@ def parse_transcript(text: str, courses: dict[str, dict], aliases: dict[str, str
         },
         "disclaimer": "Catalog matches are planning aids. Verify awarded credits and equivalencies in DARS or with an advisor.",
     }
+
+
+def resolve_candidates(candidates: list[list[str]], courses: dict[str, dict], aliases: dict[str, str]) -> list[dict | None]:
+    """Resolve course-code guesses made in the browser to catalog courses.
+
+    The browser reads the transcript and sends only short code guesses such as
+    ["COMP SCI 400", "SCI 400"], longest first, never grades or names. The
+    first guess that matches a catalog code or alias wins.
+    """
+    lookup: dict[str, str] = {}
+    for code in courses:
+        lookup[_plain(code)] = code
+    for alias, code in aliases.items():
+        lookup.setdefault(_plain(alias), code)
+    results: list[dict | None] = []
+    for guesses in candidates[:400]:
+        found = None
+        for guess in (guesses or [])[:6]:
+            if not isinstance(guess, str) or len(guess) > 40:
+                continue
+            code = lookup.get(_plain(guess))
+            if code:
+                info = courses[code]
+                credits = info.get("credits") or [None, None]
+                found = {"code": code, "title": info.get("title", ""), "credits_min": credits[0], "credits_max": credits[1]}
+                break
+        results.append(found)
+    return results

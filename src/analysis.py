@@ -83,7 +83,7 @@ def compare_programs(primary: dict, secondary: dict, credits_of) -> dict:
         **result,
         "unique_requirements": unique,
         "manual_requirements": manual,
-        "estimate_note": "Overlap is estimated from parsed Guide requirement choices; school/college double-counting limits may apply.",
+        "estimate_note": "Overlap is estimated from the requirement choices listed in the UW Guide; school/college double-counting limits may apply.",
     }
 
 

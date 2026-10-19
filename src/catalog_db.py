@@ -504,6 +504,13 @@ def course_detail(connection: sqlite3.Connection, code: str) -> dict | None:
     return detail
 
 
+_STOPWORDS = {"A", "AN", "AND", "THE", "OF", "TO", "IN", "FOR", "ON", "WITH", "CLASS", "CLASSES", "COURSE", "COURSES"}
+
+
+def _query_tokens(query: str) -> list[str]:
+    return [token for token in query.split() if token not in _STOPWORDS and len(token) > 1][:6]
+
+
 def search_courses(
     connection: sqlite3.Connection,
     query: str,
@@ -528,9 +535,16 @@ def search_courses(
             "(c.code LIKE ? OR UPPER(c.title) LIKE ? OR UPPER(c.description) LIKE ? "
             "OR UPPER(c.keywords) LIKE ? "
             "OR c.code IN (SELECT code FROM course_aliases WHERE UPPER(alias) LIKE ?) "
-            "OR c.code IN (SELECT ci.code FROM course_instructors ci WHERE UPPER(ci.instructor) LIKE ?))"
+            "OR c.code IN (SELECT ci.code FROM course_instructors ci WHERE UPPER(ci.instructor) LIKE ?)"
+            + "".join(" OR (" + " AND ".join(
+                "(c.code || ' ' || UPPER(c.title) || ' ' || UPPER(c.keywords) || ' ' || UPPER(c.description)) LIKE ?"
+                for _ in tokens) + ")" for tokens in [_query_tokens(query)] if len(tokens) > 1)
+            + ")"
         )
         params += [like, like, like, like, like.replace(" ", ""), like]
+        tokens = _query_tokens(query)
+        if len(tokens) > 1:
+            params += [f"%{token}%" for token in tokens]
     tags = filters.get("tags") or ([tag] if tag else [])
     for selected_tag in tags:
         where.append("c.code IN (SELECT code FROM course_tags WHERE tag = ?)")
@@ -592,7 +606,25 @@ def search_courses(
         "gpa_desc": "c.avg_gpa DESC, c.grade_count DESC, c.code",
         "gpa_asc": "c.avg_gpa ASC, c.grade_count DESC, c.code",
         "frequency": "CASE c.offering_frequency WHEN 'every semester' THEN 0 WHEN 'yearly' THEN 1 ELSE 2 END, c.code",
-    }.get(filters.get("sort"), "CASE WHEN c.code LIKE ? THEN 0 ELSE 1 END, c.grade_count IS NULL, c.grade_count DESC")
+    }.get(filters.get("sort"))
+    order_params: list = []
+    if order is None and query:
+        # Relevance tiers: code > title > alias/keyword > description > instructor.
+        # Graduate courses (700+) sort after undergraduate ones in the same tier.
+        order = (
+            "CASE WHEN c.code = ? THEN 0 WHEN c.code LIKE ? THEN 1 "
+            "WHEN UPPER(c.title) LIKE ? THEN 2 "
+            "WHEN (' ' || UPPER(c.title) || ' ') LIKE ? THEN 3 "
+            "WHEN UPPER(c.title) LIKE ? THEN 4 "
+            "WHEN c.code IN (SELECT code FROM course_aliases WHERE UPPER(alias) LIKE ?) THEN 5 "
+            "WHEN UPPER(c.keywords) LIKE ? THEN 6 "
+            "WHEN UPPER(c.description) LIKE ? THEN 7 ELSE 8 END, "
+            "CAST(c.number AS INTEGER) >= 700, c.grade_count IS NULL, c.grade_count DESC, c.code"
+        )
+        like = f"%{query}%"
+        order_params = [query, f"{query}%", f"{query}%", f"% {query} %", like, like.replace(" ", ""), like, like]
+    elif order is None:
+        order = "CAST(c.number AS INTEGER) >= 700, c.grade_count IS NULL, c.grade_count DESC, c.code"
     sql = (
         "SELECT c.code, c.subjects, c.number, c.title, c.credits_min, c.credits_max, c.avg_gpa, c.grade_count, "
         "c.offered_seasons, c.offering_frequency, c.offering_confidence, c.last_taught, c.requisite_tree, "
@@ -603,8 +635,7 @@ def search_courses(
         + (" WHERE " + " AND ".join(where) if where else "")
         + f" ORDER BY {order} LIMIT ?"
     )
-    if "?" in order:
-        params.append(f"{query}%")
+    params += order_params
     params.append(limit)
     rows = []
     for row in connection.execute(sql, params):

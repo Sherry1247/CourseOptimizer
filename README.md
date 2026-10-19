@@ -67,7 +67,7 @@ src/
   catalog_db.py          # SQLite schema 与查询
   transcript.py          # Transcript 文本 → 本地课程目录的保守匹配（导入前复核）
   web_app.py             # Starlette API + 可扩展的分组 discovery search
-web/static/              # 无构建步骤的前端（index.html / app.css / app.js）
+web/static/              # 无构建步骤的前端（index.html / styles.css / app.js / campus-map.json）
 tests/                   # 50 个当前单元 / 集成测试（另保留 1 个旧 Streamlit 测试）
 legacy/                  # hackathon 原型（Java optimizer、Streamlit、旧静态页）
 ```
@@ -107,7 +107,10 @@ python scripts/scrape_uw_guide.py      # → data/raw/guide/
 python scripts/fetch_uwcourses.py      # → data/raw/uwcm/（约 215 MB，可断点续传）
 python scripts/build_snapshot.py       # → data/snapshot/badgerplan-2026-27.json.gz
 python scripts/init_db.py --force
+python scripts/build_campus_map.py     # → web/static/campus-map.json（首页校园地图，Spring 2026 一周课表）
 ```
+
+旧快照的课程描述曾被截断在 600 字符；`python scripts/fill_descriptions.py` 会从 uw-coursemap-data 补全（只在开头一致时替换），之后再运行 `init_db.py --force`。
 
 ## 数据来源与可信度
 

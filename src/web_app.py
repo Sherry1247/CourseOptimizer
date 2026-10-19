@@ -17,6 +17,8 @@ import binascii
 from io import BytesIO
 
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
@@ -94,10 +96,6 @@ def discovery_course(row: dict) -> dict:
 
 async def homepage(_: Request) -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
-
-
-async def tokens(_: Request) -> FileResponse:
-    return FileResponse(ROOT / "tokens.css", media_type="text/css")
 
 
 async def health(_: Request) -> JSONResponse:
@@ -376,7 +374,6 @@ async def lifespan(_app):
 
 routes = [
     Route("/", homepage),
-    Route("/tokens.css", tokens),
     Route("/api/health", health),
     Route("/api/meta", meta),
     Route("/api/search", universal_search),
@@ -401,4 +398,4 @@ routes = [
     Route("/{path:path}", homepage),
 ]
 
-app = Starlette(debug=False, routes=routes, lifespan=lifespan)
+app = Starlette(debug=False, routes=routes, lifespan=lifespan, middleware=[Middleware(GZipMiddleware, minimum_size=1024)])

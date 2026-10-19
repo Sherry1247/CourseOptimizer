@@ -181,7 +181,7 @@ def extract_courses(html: str, subject_href: str) -> list[dict]:
             "code": code,
             "title": " — ".join(heading.split(" — ")[1:]),
             "credits": clean(block.select_one(".courseblockcredits").get_text()) if block.select_one(".courseblockcredits") else "",
-            "desc": clean(block.select_one(".courseblockdesc").get_text())[:600] if block.select_one(".courseblockdesc") else "",
+            "desc": clean(block.select_one(".courseblockdesc").get_text()) if block.select_one(".courseblockdesc") else "",
             "x": extras,
             "subj": subject_href,
         })
